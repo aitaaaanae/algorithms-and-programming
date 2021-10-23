@@ -37,7 +37,7 @@ x %approx% y
 
 
 ```
-
+<font color="red">Function works as it was supposed to, but you weren't allowed to use any additional packages, which was clearly stated during the lecture. And if you weren't sure, you could've asked. 3.5/5  </font>
 
 
 ### 2.  
@@ -64,8 +64,8 @@ Distribution <- function(x, dataframe) {
 set.seed(143)
 
 coin_counts <- replicate(x, as.integer(runif(n = rnorm(1, mean=500, sd=100), min = 50, max = 300)), simplify = FALSE)
-list <-  split(var2a, seq(nrow(dataframe)))
-names(coin_counts) <- list
+list <-  split(var2a, seq(nrow(dataframe)))      ### You have to decide here - are you hard-coding var2a or no? It doesn't make sense to input it as a variable dataframe and at the same time use it as var2a, so not being able to change it. Also, not a good idea to name a variable list since list() is a core function - try lst or something like that.
+names(coin_counts) <- list   ### Interesting choice saving the dimensions as list element names. It may not be the most practical option for later use, but it's quite elegant in this object.
 return(coin_counts)
 
 #strings <- lapply(coin_counts, function(x) toString(x, width = NULL))
@@ -87,7 +87,7 @@ return(coin_counts)
 }
 
 mylist <- Distribution(143, var2a)
-mylist
+# mylist
 
 
 #strings <- lapply(coin_counts, function(x) toString(x, width = NULL))
@@ -100,6 +100,14 @@ mylist
 
 ```
 
+<font color="red">Please be careful with indentation when writing functions. Function body should be intended buy at least 2 spaces at first level, so it's clear to the reader what is a part of the function and what is not. Also, when submitting homework, it's better to remove the parts of the code which you gave up on, and not just comment them out - it helps with readability. 
+Also PLEASE do not leave outputs so big to print out in the console. Use head(), View(), or something else, or nothing at all.   
+See your code chunk for the most important comment (one about hardcoding), it was easier to insert it there.  
+Now a note regarding sampling: if you need 143 vector lengths, it's better to pull them from desired distribution at once. Functions rnorm, runif, and similar guarantee to pull a sample from a particular distribution, but not one of them "remembers" the last iteration when they were called. In other words, it is never a good idea to split your sampling into multiple iterations - because the bigger the sample you're pulling at once, the surer you can be that it really fits the desired distribution. Random number generators are far from perfect, computationally speaking, so try to stick to bigger samples.
+  
+Function is very tidy and elegant, does exactly what it was supposed to do, use of replicate is exactly as it should, but I am taking a point on account of var2a/dataframe mixup. It may seem like a small thing but this is exactly the type of mistake that breaks projects. 2/3  </font>
+
+
 C) Make a function which will calculate total weight of gold coins of various dimensions. The function's input should be an object of the same type and layout as the object you created in part B) - in other words, your new function should work on the object you created. The function should return one number: total weight. (4 points)
 ```{r}
 
@@ -111,9 +119,9 @@ coinWeight <- function(n, r, th, d=19.3) {
 }
 
 Total_weigths <- function(df, list) {
-sumatory <- lapply(mylist, function(x) sum(x))
+sumatory <- lapply(mylist, function(x) sum(x))   ### this can be written simpler as lapply(mylist, sum); you are mixing mylist and list now, same problem as with dataframe/var2a in B!!!
 n <- unlist(sumatory)
-vector_ratius <- as.vector(df['radius'])
+vector_ratius <- as.vector(df['radius'])         ### alternatively just do df$radius, then there's no need for as.vector()
 vector_thickness <- as.vector(df['thickness'])
 total_result <- sum(mapply(coinWeight, n, vector_ratius, vector_thickness))
 
@@ -123,6 +131,11 @@ return(total_result)
 
 total_weigtht <- Total_weigths(var2a, mylist)
 ```
+
+<font color="red">The point in B part was to save all information in one object so you can later extract it again from that same, ONE object. The way you wrote it, you need two inputs which are connected but not saved together. This greatly increases the chances for mistakes when calling the function. What would happen with the execution if you input, say, a dataframe with 10 rows and a list of 20 elements which are not part of the same dataset?  
+You write nice tidy readable code, and use apply well, but have risky coding practices. While I admire your bravery :D it's not the smartest thing to do. When producing code, always try to avoid giving opportunites for human errors.  
+3/4  </font>
+
 
 D) Generate data for gold, silver and copper coins. Silver coins have radii from 1.5 to 3.0 in increments of 0.25 and thickness from 0.12 to 0.28 in increments of 0.02. Copper coins have radii from 1.0 to 2.2 cm in increments of 0.2 and thickness from 0.15 to 0.35 in increments of 0.05. You can assume per-square and total distributions are the same as for gold coins in B).
 Basically, you need to repeat the data creation process from A) and B) three times with different parameters. Do NOT do this by writing almost the same code three times! You need to find a way to "automate" the process. You can choose to organise everything from A) and B) into one function, or split the the process into smaller parts and handle it that way - whatever you find easiest. But you need to generate all the data with one call of (each) function. You will probably use some kind of repetition or looping mechanism, but use only the ones which are optimised in R (e.g. apply family). You are not allowed to use classic for/while/repeat loops. (5 points)
@@ -150,20 +163,27 @@ thickness <- seq(from = 0.12, to = 0.28, by=0.02)
   }
   
 variables <- list(radius = radius, thickness=thickness)
-data.frame <- expand.grid(variables)
+### data.frame <- expand.grid(variables)
+df <- expand.grid(variables)
 
-list_of_coins <- Distribution(143, df)
+list_of_coins <- Distribution(143, df)   ### This hard-coded 143 here is a huge problem. Function should be usable across the entire dataset, meaning it should work on different number of dimension combinations than 143 for gold coins. In this case it produces extra vectors for silver and copper, but it would break the function if anything had more that 143 different dimension combinations.
+### Also what is df here? It's not one of the inputs of the function, and you don't define it anywhere in the function. I assume "data.frame" was changed into "df" at some point, or vise versa, so I took the liberty of changing that in two places in your code to see how it runs without this error (because with it, it doesn't run at all).
 
-return(c(data.frame, list_of_coins))
+### return(c(data.frame, list_of_coins))   
+return(c(df, list_of_coins))   
 
 }
 
 
-coin_types <- c(Gold, Copper, Silver)
+coin_types <- c(Gold, Copper, Silver)    ### this function call would never work because you treated Gold, Copper and Silver as variables and not character strings ("Gold", "Copper", "Silver")
+coin_types <- c("Gold", "Copper", "Silver")   ### added this
 lapply(coin_types, function(x) Coins(x))
 
 
 ```
+
+<font color="red">The code chunk as it was before my corrections didn't run at all. Right idea for the function, although it was ruined by the hard-coded 143.  1.5/5 for the effort, and the right direction. </font>
+
 
 E) Apply the function you created in C)* on the whole data set created in D). Calculate total weights for each type of metal separately, and the total weight you need to haul from the dragon's cave (all the coins together). You should return all that information in one object. (4 points)
 *You will probably need to adjust your original function to include additional parameters. You don't need to re-write the whole function here if you don't want to, you can go back to C) and change the necessary parts there - but remember to check if it still functions correctly!
@@ -200,6 +220,9 @@ getSum2 <- function(m, n) {
 
 ```
 
+<font color="red">seq(from=m, to=n) and m:n are completely equivalent, basically just two different ways to write down the same thing. And so the two functions don't really represent two different ways of solving. There's a mathematical formula for this, google it.  
+getSum1 doesn't work in the first number in input is bigger.  
+2/4  </font>
 
 
 ### 4.  
@@ -252,6 +275,8 @@ getDistance(a,b, "Euclidean")
   
 
 ```
+<font color="red">A-C ok, in D the warning is missing. Interesting how you suddenly completely changed the layout for writing your functions, and forgot the same thing as one of your colleagues, and also one of the functions is identical. Could be a coincidence. Could be not. 
+4/5 for the task  </font>
 
 
 ### 5.  
@@ -265,7 +290,9 @@ est_pi <- function(n, r) {
 #4r2. 
   
 #If we divide the area of the circle between the area of the square
-#we would obtain the probability of a point being within the circle. #Therefore, we know that the probability is pi/4, hence pi = 4 times the probability. 
+#we would obtain the probability of a point being within the circle. #Therefore, we know that the probability is pi/4, hence pi = 4 times the probability.
+
+### saying 'probability' here is not exactly correct, statistically speaking, but I get your point
 
 # First we have to generate two vectors with the coordinates of random points within the square in which the circle is isncribed
 x<-runif(n, min=-r, max=r)
@@ -288,6 +315,9 @@ est_pi(500000, 2)
  
 ```
 
+<font color="red">Clear and simple code, mathematically correct, very nicely commented. Good job!  </font>
+
+
 B) Repeat this estimation 100,000 times using function replicate (if the computer on which you're working on can't handle it, lower the number of repetitions; if this function call runs longer than 5-10 minutes, stop it, lower the numbers, and try again). How much (in % terms) is it different from actual value of pi if you first set the seed to 1234? (Google function set.seed() and what it does.) Use the pi variable that is part of the base R package to do this comparison. 
 ```{r}
 set.seed(1234)
@@ -301,4 +331,15 @@ percent
 
 
 ```
+<font color="red">5/5 for the task, very nice!  </font>
+
+<font color="red">IMPORTANT NOTICE  
+Task 2 shows obvious signs of not starting your homework on time. This is a bad practice, which lost you a lot of points in this homework. Try not to do it again.  
+It also bears a striking resemblance to the code one of your colleagues submitted. I don't know if you divided the tasks, worked together, or somebody copy-pasted from another, and I don't care. Next time we see something like that, everybody involved loses all points for the task, and gets additional negative points as well. This is your first and final warning. Please take it seriously.
+</font>
+
+
+
+
+
 
