@@ -1,0 +1,547 @@
+---
+title: "Homework 3. data table"
+author:
+date: "`r format(Sys.time(), '%d.%m.%Y')`"
+output: html_notebook
+---
+
+
+# Deadline for homework is Sunday,24.10.2021., 23.55 h
+
+# Instructions and RULES:
++ Perform all of the analysis using only data.table. 
++ It is allowed to use functions that are present in base R (DO NOT forget them as you may need to search them and use them in this homework).
++ All the solutions which use for loops will not be graded. Use the functions from the apply family!!!
++ If certain task contains detailed instructions how to solve something, then those instructions must be followed or these tasks will not be graded.
++ Whenever you are asked to show a certain value or values as an answer and if it is not precisely stated in which format should the answer be (data.table or a vector) then both answers are correct.
++ Manual calculations and writing the answers directly on the code chunk will not be taken into consideration without the proper coding steps (and/or saved variable) that confirm this answer.
+
+
+```{r}
+library(data.table)
+```
+
+# Task 1. Analysis of dataset *flights* (44 pts)
+
+Read in the flights data in flights variable from   "https://raw.githubusercontent.com/Rdatatable/data.table/master/vignettes/flights14.csv". (Install curl package if you need to before doing this.)
+
+
+
+
+
+```{r, message=FALSE}
+library(curl)
+
+flights <- fread("https://raw.githubusercontent.com/Rdatatable/data.table/master/vignettes/flights14.csv")
+flights
+```
+
+a1) Order the flights data table by carrier (ascenting order) then by decreasing distance, and save only hour as a vector in a variable var1a1. (1 point)
+
+```{r}
+
+dt_flights <- as.data.table(flights)
+
+dt_flights_order <- dt_flights[order(carrier, -rank(distance))]
+
+var1a1 <- dt_flights_order[,hour]
+
+var1a1
+
+```
+
+
+a2) Order the flights data table by carrier (ascenting order) then by decreasing distance, and save only hour as a data table with one column in a variable var1a2. (1 point)
+```{r}
+var1a2 <- data.table(var1a1); var1a2
+
+```
+
+b1) Find the max flight air time for each carrier. copy the result to variable var1b1 (data.table with 2 columns, carrier and maxairtime, sorted by carrier. Do this in one command, no chaining, don't change the original data.table.). (1 point)
+
+```{r}
+
+var1b1 <- dt_flights[,.(maxairtime=max(air_time)), keyby=carrier]; var1b1
+
+```
+
+b2) Find the max flight air time for each carrier. copy the result to variable var1b2 (data.table with 2 columns, carrier and maxairtime, sorted by maxairtime, from largest to smallest. Don't change the original data.table.). (1 point)  
+
+```{r}
+
+var1b2 <- dt_flights[,.(maxairtime=max(air_time)), by=carrier]
+var1b2 <- var1b2[order(maxairtime)]; var1b2
+
+```
+
+c1) Count the number of flights that flew maximum air time for each carrier. Copy the data.table with carrier and numberofmaxflights to var1c1. Do this in one command, no addition of new columns and no chaining=2 points.
+
+```{r}
+
+var1c1 <- dt_flights[, {max_air_time = max(air_time)
+        .(numberofmaxflights=unlist(lapply(carrier, function(x) sum(air_time==max_air_time))))}, by=carrier]; var1c1
+
+```
+
+c2) Then do this by addition of new column to flights and/or chaining in one command = 1 point save the result to var1c2 (copy!). If you add the column, remove it in the end of this exercise (end of c2 just remove the column/s if added from flights). 
+
+```{r}
+
+var1c2 <- dt_flights[, max_air := max(air_time), carrier][max_air == air_time, .(numberofmaxflights= .N), by=carrier]
+
+
+dt_flights[, max_air:=NULL]; var1c2
+
+dt_flights
+
+```
+
+d1) Count how many flights had the same flight time for each carrier separately, ordered by carrier alphabetically and by decreasing flight time (carrier, air_time, N). copy the result to var1d1. Do this in one command, no chaining. (1 point)
+
+```{r}
+var1d1 <- dt_flights[order(carrier, -rank(air_time)), .N, by = .(carrier, air_time)]; var1d1
+
+```
+
+d2) Get the data.table containing the same as previous (carrier, air_time, N), but only for the longest 2 flights for each carrier! copy the result to var1d2. Do this in one command, chaining if needed. (1 point)  
+
+```{r}
+
+var1d2 <- dt_flights[order(carrier, -rank(air_time)), .N, by = .(carrier, air_time)][, head(.SD,2), by=carrier]; var1d2
+
+```
+
+
+d3) Get the data.table containing the same as previous (carrier, air_time, N), but only for the longest and shortest flights for each carrier! copy the result to var1d3. Do this in one command, chaining if needed. (1 point) 
+
+```{r}
+
+var1d3 <- dt_flights[order(carrier, -rank(air_time)), .N, by = .(carrier, air_time)][, .SD[c(1,.N)], by=carrier]; var1d3
+
+```
+
+e) Get the name of the carrier who has the largest difference between longest and shortest flight air time! copy the result to var1e (only the carrier name as an element of vector). Do this in one command, chaining if needed, do not change the original data.table! (3 points)
+
+```{r}
+var1e <- as.character(dt_flights[, {as.numeric(lapply(carrier, function(x) diff=max(air_time)-min(air_time)))}, by=carrier][order(-rank(V1))][1,1]); var1e
+
+```
+f) Get the name of the carrier who has the largest mean air time. One command, chaining allowed, don't change the original data.table. Save the name alone in variable var1f (still the same command.). (1 point) 
+
+```{r}
+
+var1f <- as.character(dt_flights[, {as.numeric(lapply(carrier, function(x) mean=mean(air_time)))}, by=carrier][order(-rank(V1))][1,1]); var1f
+
+```
+
+g1) Write a function that will calculate the squared sum of differences between each element and the mean value of all elements, call the function myRss. The function should take one vector as an argument and return numeric value. Use this function to calculate the value for air time for each carrier, name the column rss, dont change the original table! one command, no chaining. (copy to var1g1, 2 points).  
+
+```{r}
+
+myRss <- function(vector) {
+  
+  result <- sum(sapply(vector, function(x) (x-mean(vector))^2))
+  return(as.numeric(result))
+}
+
+
+
+var1g1 <- dt_flights[, .(rss = myRss(air_time)), by=carrier]; var1g1
+
+
+```
+g2) Do as the previous but for air_time and arr_delay columns in the same command, no chaining, no change to original data.table (var1g2, 1 point)! 
+
+```{r}
+
+var1g2 <- dt_flights[, .(rss_air_time = myRss(air_time), rss_arr_delay = myRss(arr_delay)), by=carrier]; var1g2
+
+```
+
+g3) Do as the previous but for all numeric columns in the same command, no chaining, no change to original data.table (var1g3, 2 points)!
+
+```{r}
+
+var1g3 <-  copy(dt_flights[, lapply(.SD, myRss), by=carrier, .SDcols = sapply(dt_flights, is.numeric)]); var1g3
+
+```
+
+h1) Assign a new column to flights: speed which will have speed calculated for each flight. Do it in a data.table fashion. copy the resulting flights data.table to myFlights1 variable. (1 point)
+
+```{r}
+
+myFlights1 <- copy(dt_flights[, speed := (distance/air_time)])
+dt_flights[, speed:=NULL]
+
+myFlights1
+
+```
+
+h2) Convert speed and distance variables to type double. do it in data.table fashion, in one command. copy the resulting data.table to myFlights2 variable. Do this withouth lapply. (1 point). 
+
+```{r}
+myFlights2 <- copy(myFlights1[, speed:=as.double(speed)][, distance:=as.double(distance)]); myFlights2
+
+```
+
+
+
+h3) Again do the RSS calculation as in var1g1 but for all double columns in the same command, no chaining, no change to original data.table (var1g4, 1 point)!
+
+```{r}
+var1g4 <- copy(myFlights2[, lapply(.SD, myRss), by=carrier, .SDcols = sapply(myFlights2, is.double)]); var1g4
+
+```
+
+
+
+i) Save the names of the columns which are of type double to thosecolumns variable.(1 point)
+
+```{r}
+thosecolumns <- names(myFlights2[ , .SD, .SDcols = is.double]); thosecolumns
+```
+
+j) Convert thosecolumns back to type integer. do it in data.table fashion, in one command.  copy the resulting data.table to myFlights3 variable. But now do this with lapply.(2 points).
+
+```{r}
+myFlights3 <- copy(myFlights2[, (thosecolumns):=lapply(.SD, as.integer), .SDcols = thosecolumns]);
+myFlights3
+
+```
+
+k) For air_time column, calculate the difference between the second and first observation for each carrier, in flights data frame ordered by carrier and then by decreasing air_time. In the same command, no chaining, no change to original data.table, no additional function defined outside (var1k, 2 points)!
+
+```{r}
+
+var1k <- copy(myFlights3[order(carrier, -rank(air_time)), .(diff=air_time-air_time[1]),by=carrier]); var1k
+
+```
+
+
+
+
+
+l) For all integer columns, calculate the difference between the second and first observation for each carrier. In the same command, no chaining, no change to original data.table, no additional function defined outside (var1l, 2 points)!
+
+```{r}
+
+var1l <- copy(myFlights3[, lapply(head(.SD, 2), function(x) diff(x)), by=carrier, .SDcols = sapply(myFlights3, is.numeric) ]);
+var1l
+
+```
+
+m) Copy the flights to myFlights. Add a new column, rss_air_time which will have myRss of air_time saved in it, to myFlights. do not change the flights variable, dont use chaining, do it in one command, (myFlights assignment is separate command.) copy the result to variable myFlights1
+
+```{r}
+
+myFlights <- copy(dt_flights)
+myFlights1 <- copy(myFlights1[, rss_air_time := myRss(air_time)]); myFlights1
+                  
+
+
+```
+
+n) Make a vector with all the names of the columns with integer values, save it in intnames variable. Use the **paste** function to make a vector which will have all the names of integer columns converted to rss_columnname (so for air_time it will be rss_air_time, dor hour it will be rss_hour, ...) (2 points) (No need to do this with data table). save the vector as rssnames variable.
+
+```{r}
+
+vect_aux <- names(dt_flights[ , .SD, .SDcols = is.integer])
+rssnames <- unlist(lapply(vect_aux, function(x) paste("rss_", x))); rssnames
+
+```
+
+o) Use the previously created vectors to add multiple new columns to data.table. The names of the columns you will add will be rssnames. And the values will of course be myRss(column), where column is every column from intnames. Do it in one command, data.table style, no chaining. Copy the result to myFlights3 variable. (2 points).
+
+```{r}
+
+myFlights3 <- copy(myFlights1[, c(rssnames) := lapply(.SD, function(x) myRss(x)), .SDcols = vect_aux]); myFlights3
+
+```
+
+p) Go back to flights data.table. Calculate and return (do not change the data.table) the mean, and sd for air_time for flights which travel between JFK and MIA. Do this by each carrier, in one line, no chaining. Do not rename the columns to anything, copy the result to myFlights4.(1 points)  
+
+```{r}
+
+myFlights4 <- dt_flights[origin =="JFK" & dest =="MIA", .(mean_air=mean(air_time), sd_air=sd(air_time)), by=carrier]; myFlights4
+
+```
+
+r)  Which journey (from -> to, regardless of the carrier) was delayed in arrival the most times? (var1r, 1 pts)
+
+```{r}
+
+var1r <- dt_flights[, .(number=as.numeric(lapply(arr_delay, function(x) sum(x!=0)))), by=.(origin, dest)][which.max(number),][,1:2]; var1r
+
+```
+
+s)  Which journey (from -> to, regardless of the carrier) was delayed in arrival the most in total minutes? (var1s, 1 pts)
+
+```{r}
+
+var1s <- dt_flights[, list(suma = sum(arr_delay)), by=.(origin, dest)][which.max(suma),]; var1s
+
+```
+
+t) Are flights longer depending on time of the day? (Divide the day into : night (from 22->6 hours), morning (6->12, afternoon 12->16, evening
+16->22 )) (var1t, 3)
+
+```{r}
+day_or_night <- function(x) {
+  
+if((x>=6)&(x<=12)) {result <- "morning"}
+if((x>12)&(x<=16)) {result <- "afternoon"} 
+if((x>16)&(x<=22)) {result <- "evening"} 
+if((x> 22)|((x>=0)&&(x<6))) {result <- "night"}
+  
+  return(result)
+}
+
+
+
+
+
+var1t <- copy(dt_flights[, day_night := sapply(hour, function(x) day_or_night(x))][, .(mean_length=mean(air_time)), by=day_night])
+var1t
+
+#THE FLIGHTS ARE ON AVERAGE LONGER IN THE EVENING, BUT IT IS NOT A GREAT DIFFERENCE. 
+
+```
+
+u) For which time of the day are flights delayed in departure the most and for which the least? What about arrival delays? (var1u, 2)
+
+```{r}
+
+
+
+
+var1u1 <- copy(dt_flights[, day_night := sapply(hour, function(x) day_or_night(x))][,mean_dep := mean(dep_delay), by=day_night ][order(-rank(mean_dep)), .SD[c(1,.N)]][, day_night])
+
+
+
+
+var1u2 <- copy(dt_flights[, day_night := sapply(hour, function(x) day_or_night(x))][,mean_arr := mean(arr_delay), by=day_night][order(-rank(mean_arr)), .SD[c(1,.N)]][, day_night])
+
+
+
+dt_flights[, mean_dep:=NULL]
+dt_flights[, mean_arr:=NULL]
+
+var1u2
+
+```
+
+v) Answer u) but take into account the day of the week as well. Use package function **wday** from package **lubridate** to answer this question. (For which day of the week and which time of the day are flights delayed the least, and for which the most?) (var1u, 2)
+
+```{r}
+library(lubridate)
+
+varv <- copy(dt_flights[, dates := make_date(year, month, day)])
+
+var1v1 <- copy(varv[, day_week :=(sapply(dates, function(x) wday(x)))][,mean_dep := mean(dep_delay), by=.(day_night, day_week)][order(-rank(mean_dep)), .SD[c(1,.N)]][, .(day_night, day_week)])
+
+var1v2 <- copy(varv[, day_week :=(sapply(dates, function(x) wday(x)))][,mean_arr := mean(arr_delay), by=.(day_night, day_week)][order(-rank(mean_arr)), .SD[c(1,.N)]][, .(day_night, day_week)])
+
+var1v2; var1v2
+
+dt_flights[, mean_dep:=NULL]
+dt_flights[, mean_arr:=NULL]
+
+
+```
+
+
+
+# Task 2. Taxonomic analysis of sponge genomes (25 pts)
+
+## Short introduction
+Program DIAMOND is a sequence aligner for protein and translated DNA searches, designed for high performance analysis of big sequence data. When combined with program MEGAN, it becomes an indispensable tool for taxonomic and functional analysis of metagenomes. More information can be found at https://link.springer.com/protocol/10.1007/978-1-4939-9074-0_19. Not only is it useful for analyzing metagenomes but this workflow can also be used in detection of contaminants in newly assembled genomes of Eukaryotes. In this task you will have to analyze DIAMOND results for the genomes of several sponges.
+
+Before you start solving this task, you need to understand how BLAST and DIAMOND work since you are analyzing its output.
+Answer these questions before solving the tasks. (1)
+What is DIAMOND and why is it similar to BLAST?
+
+DIAMOND is a  high-throughput program for aligning DNA reads/protein sequences against a protein reference database such as NR. Similarly, blast is an informatic program which aligns local sequences, be it DNA, RNA or proteins. The program compares a query sequence against lots of sequences in a data base. However, DIAMOND works at up to 20,000 times the speed of BLAST, with high sensitivity. On Illumina reads of length 100-150bp, in fast mode, DIAMOND is about 20,000 times faster than BLASTX, while reporting about 80-90% of all matches that BLASTX finds, with an e-value of at most 1e-5. 
+
+Why is DIAMOND faster than blast? Because of the improved algorithms it uses. First, DIAMOND uses an optimized subset (seed) of the query and reference sequences to find matches.  The subset is described by the seed weight and shape.  Second, the aligner employs something called double indexing, an improved method for storing information regarding seed position within each sequence.  Finally, the aligner relies on a reduced amino acid alphabet consisting of only 11 amino acids.
+
+
+What is the output format and what do the columns represent (focus on columns present in table *spongeDiamond* in step 0. in the following task)?
+
+The output format is DAA, and the columns represent the following: 
+- qseqid is que query sequence id
+- qlen is the query sequence length
+- sseqid is the subject sequence id (sequence against which the query is compared)
+- slen means the subject sequence length
+- qstart and qend are the start and end of the alignment of the query
+- sstart and send mean the same for the subject
+- qseq and sseq are the aligned part of the query and subject respectively
+- evalue: number of expected hits of similar quality (score) that could be found by chance (it is used as a quality filter for the result)
+- bitscore: the required size of a sequence database in which the current match could be found by chance. The bit score is derived from the raw alignment score, The score of an alignment is calculated as the sum of substitution and gap scores.  
+- length means Alignment length, being the alignment the process or result of matching up the nucleotide or amino acid residues of two or more biological sequences to achieve maximal levels of identity and, in the case of amino acid sequences, conservation, therefore assesing the similarity between sequences.
+- pident means Percentage of identical matches. 
+- mismatch means Number of mismatches
+- staxids means unique Subject Taxonomy ID(s), separated by a ';' (in numerical order)
+- stitle means Subject Title
+- salltitles means All Subject Title(s), separated by a '<>'
+- qcovhsp means Query Coverage Per HSP (HSPs are pairs of segments that form a linear alignment)
+- qtitle means Query title
+- family, class, order, phylum: from the subjects.
+
+
+## Tasks
+0.step: Import the file **SpongeDiamond_algorithms2021.RDS** and examine the table.
+
+```{r}
+
+library(data.table)
+spongeDiamond <- readRDS("SpongeDiamond_algorithms2021.RDS"); spongeDiamond
+```
+
+a) How many sponges do you have in your table? (1)
+
+```{r}
+
+spongeDiamond_dt <- as.data.table(spongeDiamond)
+
+var2a <- spongeDiamond_dt[, uniqueN(sponge)]
+
+
+var2a
+
+```
+
+b) Which sponge (or sponges if more have the same result) has the most contigs? (1)
+
+```{r}
+
+
+varb2 <- spongeDiamond_dt[, .N, by=sponge][which.max(N)][1,1]; varb2
+```
+
+c) Which sponge (or sponges if more have the same result) has the shortest median length of contigs? (1)
+
+```{r}
+varc2 <- spongeDiamond_dt[, .(DT_med= median(unlist(.SD), na.rm = TRUE)), by = sponge][which.min(DT_med)][1,1]; varc2
+```
+
+d) Which contig has the highest and which contig the lowest number of mismatches in total for each sponge? (1) 
+
+```{r}
+
+vard21 <- spongeDiamond_dt[, count := .N, by = .(sponge, mismatch)][which.max(count)]
+vard22 <- spongeDiamond_dt[, count := .N, by = .(sponge, mismatch)][which.min(count)]
+
+vard21; vard22
+
+spongeDiamond_dt[, count:=NULL]
+
+```
+
+e) Which pair of superkingdom-family occurred most time for Amphimedon? (2)
+
+```{r}
+
+vare2 <- spongeDiamond_dt[sponge=="Amphimedon"][, count := .N, by=superkingdom][order(-rank(count))][1, c(superkingdom, family)]
+
+vare2
+
+spongeDiamond_dt[, count:=NULL]
+
+
+```
+
+f) Select protein-sponge pair with the highest aligned lengths for each pair and calculate the difference between the pairs with the highest sum of length and lowest sum of lengths. (2)
+
+
+```{r}
+
+
+
+two_most <- spongeDiamond_dt[, maxlength := max(length), by= .(sponge, sseqid)][, .(max=max(maxlength), min=min(maxlength))][,max-min]
+
+two_most
+
+
+```
+
+g) Annotate every query contigs for each sponge in the original cleaned *spongeDiamond* table in the following way: If best 3 results (by eval) for each contig belongs to the same superkingdom, annotate that contig as that superkingdom. (2) Note: Select smaller sample size on which you will develop your code and then run it on the whole dataset if you are having troble with the running time or crashing. 
+
+
+```{r}
+
+is_eq <- function(vector){
+  
+  result <- ifelse((all.equal.character(vector[1], vector[2], vector[3])), "TRUE", "FALSE")
+  return(result)
+    
+}
+
+
+var2g <- spongeDiamond_dt[order(evalue), head(.SD,3, na.rm=FALSE), by=.(sponge, qseqid)][,true_false := lapply(.SD, function(x) (is_eq(x) == "TRUE")), by=.(sponge, qseqid), .SDcols="superkingdom"][which(true_false == "TRUE"), by= .(sponge, qseqid)][, head(.SD,1), by=.(sponge, qseqid)][, c("qseqid", "superkingdom")]
+
+var2g
+
+```
+
+  + What is the difference in the number of contaminants (sequences belonging to superkingdom Bacteria) between the sponge with the highest number of contaminants and the rest ? Show the results as data table with sponges and differences (3)
+  
+  
+```{r}
+
+biggest <- as.numeric(spongeDiamond_dt[superkingdom == "Bacteria", .N, by= .(sponge, superkingdom)][which.max(N)][,3])
+biggest
+
+names=c("Amphimedon", "Tethya", "Suberites", "Sycon", "Oscarella", "Ephydatia")
+diff <- spongeDiamond_dt[superkingdom == "Bacteria", .N, by= .(sponge, superkingdom)][, lapply(N, function(x) biggest-x)]; 
+
+colnames(diff) <- c(names); diff
+```
+
+
+h) Add a column "pidentGrp" that will represent identity groups for each row : cut the “pident” value to bins of 0-10%, 10-20%, 20-30%,…90-100%. 
+Add a column "maxLength", that will represent maximum of aligned length for each contig in sponge- this is the largest match possible for each contigs and all hits. Add another column "percMaxLen" that will say what percentage of maxLength the row has. (3)
+
+
+```{r}
+
+var2h <- spongeDiamond_dt[,c("pidentGrp") := .(fcase(pident > 0 & pident <=10, '0-10%',
+pident > 10 & pident <=20, '10-20%',
+pident > 30 & pident <= 40, '20-30%',
+pident > 30 & pident <= 40, '30-40%',
+pident > 40 & pident <=50, '40-50%', pident > 50 & pident <=60, '50-60%',pident > 60 & pident <=70, '60-70%', pident > 70 & pident <=80, '70-80%', pident > 80 & pident <=90, '80-90%', pident > 90 & pident <=100, '90-100%'))][, maxLength := max(length), by=.(sponge, sseqid)][, percMaxLen := (length/maxLength)*100]
+
+var2h
+
+
+
+```
+
+i) In this part functions rleid and shift might be useful to you. What do they do? (2 points). 
+
+ RLEID: It will create a unique id for groups representing how long is the thread of my variable in combination with other variables. For example if we have a data.table which is: DT <- data.table(x = c(1, 1, 2, 2, 2, 1), y = 1:6)), the variable x has three runs: a run of length 2 with value 1 (because the value 1 repeats 2 times consecutively), a run of length 3 with value 2, and a run of length 1 with value 1. The data.table rleid function provides an id indicating the run id of each element of a vector. 
+ 
+ SHIFT: ???
+ 
+
+  + Read in file with one whole contig for Tethya (**contigTethya.txt**) find which "class" appears most times. (save the Tethya genome to new a variable "genomeTethya" and continue to work with it). For example if "class" repeat is Demospongiae, Demospongiae, Leptocardii, Leptocardii, Leptocardii, Leptocardii then the class Leptocardii appears most times consecutively, 3 time to be precise. If multiple class appear the same times, report all of them. (4 pts)
+```{r}
+
+contigTethya <- fread("contigTethya.txt"); contigTethya
+
+genomeTethya <- as.data.table(contigTethya)
+
+genomeTethya_ids <- unique(unlist(genomeTethya[, rleids := rleid(class)][, count_rleids := .N, by=rleids][max(count_rleids)==count_rleids][,class])) ; genomeTethya_ids
+
+
+```
+
+  +  In which positions are those Families (do the analysis on the variable "longestTethya")? Save the result as vector. (2 points)
+
+
+```{r}
+
+longestTethya <- genomeTethya[class == "Mammalia",which = TRUE]; longestTethya
+
+
+```
+
