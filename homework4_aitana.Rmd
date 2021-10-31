@@ -47,8 +47,10 @@ if(!dir.exists(newfolder)){ dir.create(newfolder) }
 
 
 
-statistics <- dt_data.names[, .(sum=sum(ppm), mean=mean(ppm), median=median(ppm), min=min(ppm), max=max(ppm)), by=group]
-statistics_higher <- dt_data.names[order(-rank(INTENSITY)), head(.SD, 3), by=group][,.(sum=sum(ppm), mean=mean(ppm), median=median(ppm), min=min(ppm), max=max(ppm)), by=group]
+statistics <- t(dt_data.names[, .(sum=sum(ppm), mean=mean(ppm), median=median(ppm), min=min(ppm), max=max(ppm)), by=group])
+statistics_higher <- t(dt_data.names[order(-rank(INTENSITY)), head(.SD, 3), by=group][,.(sum=sum(ppm), mean=mean(ppm), median=median(ppm), min=min(ppm), max=max(ppm)), by=group])
+
+
 
 save(statistics, statistics_higher, file = (paste0(getwd(), "/Task1/results/result_data.RData")))
 
@@ -73,20 +75,10 @@ dinu_dt <- as.data.table(dinucleotides)
 setnames(mono_dt, "rn", "species")
 setnames(dinu_dt, "rn", "species")
 
-#myFlights3 <- copy(myFlights2[, (thosecolumns):=lapply(.SD, as.integer), .SDcols = thosecolumns]);
-#myFlights3
 
-#copy(myFlights1[, c(rssnames) := lapply(.SD, function(x) myRss(x)), .SDcols = vect_aux])
 
 mono_dt[, sums:=NULL]
 
-#columns <- c(colnames(mono_dt[,-1]))
-             
-#colnew <-  unlist(lapply(columns, function(x) paste("freq_", x)))
-
-#frequency_m <- copy(mono_dt[, sums := rowSums(mono_dt[, -1])][, (colnew) := lapply(.SD, function(x) x/sums), .SDcols = columns])
-
-#mono_dt[, sums:=NULL]
 
 #A) without melt
 frequency_table <- function(dt) {
@@ -143,10 +135,12 @@ dinu_melt[, sums:=NULL]
 
 ```{r}
 
-dictionary <- dinu_melt[nt=="GC", .(GC_content=unlist(lapply(freq, function(x){x*100}))), by=species]; dictionary
-                            
-GC_freq <- merge(dinu_melt, dictionary, by="species"); GC_freq
 
+
+GCs <- mono_melt[, .(GC_content = (sum(freq[(nt == "C" | nt == "G")])/sum(freq))*100), by=species]; GCs
+
+
+dinu_melt <- merge(dinu_melt, GCs, by="species"); dinu_melt
 
 ```
 
@@ -155,13 +149,14 @@ GC_freq <- merge(dinu_melt, dictionary, by="species"); GC_freq
 ```{r}
 expected_freq <- 1/16
 
-#I rounded to two decimals in order to obtain some results.
-dinu_melt_mean <- dinu_melt[, mean_freq := mean(freq), by=nt]; dinu_melt_mean
+dinu_melt_over_under <- copy(dinu_melt)
 
-dinu_melt_mean[,mean_freq] <- round(dinu_melt_mean[,mean_freq], digits = 2)
+dinu_melt_over_under <- dinu_melt_over_under[, over_under := lapply(.SD, function(x) ifelse(x > expected_freq, "over", "under")), .SDcols="freq"]; dinu_melt_over_under
 
-dinu_melt_mean
 
+over_under <- dinu_melt_over_under[, .(over_under = over_under == "over"), by=nt]; over_under
+
+#THE TABLE REPRESENTS THE NT THAT ARE OVER REPRESENTED FOR EACH SPECIES. THE ONES THAT ARE TRUE FOR ALL THE SPECIES ARE THE ONES THAT HAVE TRUE IN THE COLUMN OVER_UNDER 5 TIMES. FOR EXAMPLE AA, AT, CA, TG, TT 
 
 ```
 
@@ -169,35 +164,40 @@ dinu_melt_mean
 
 ```{r}
 
-frequencies <- mono_melt[, .(frecuencies = freq), by=c("species", "nt")]; frequencies
+expand_grid <- mono_melt[, unique(expand.grid(mono_melt[, nt], mono_melt[, nt])), by=species]
+setnames(expand_grid, "Var1", "nt")
+setnames(expand_grid, "Var2", "nt1")
 
-#nucleotides <- c(2, 3, 4, 5)
-#combinations <- as.data.table(combn(nucleotides, 2)); combinations
-combination <- function(vect) {
-  combn(vect, 2, FUN=prod)
-  
-  
+nucleotid1<-as.character(expand_grid[, nt])
+nucleotid2<-as.character(expand_grid[, nt1])
+sp<-expand_grid[, species]
+
+
+nucl1<-function(x, y){
+  result<-mono_melt[, freq[nt==x & species==y]]
+  result
 }
-#combination(nucleotides)
 
 
+expand_grid[, frec1 := mapply(nucl1, nucleotid1, sp)]
+expand_grid[, frec2 := mapply(nucl1, nucleotid2, sp)]
+
+new_freq <- expand_grid[, frec1*frec2]
 
 
-#combination := lapply(x, function(v) combn(v, 2, simplify = FALSE))]
+dinu_melt <- dinu_melt[order(species),  new_freqs := new_freq]; dinu_melt
 
-#mono_melt[order(species), freq_comb =: lapply(.SD, function(x) )]
-
-
-combinations <- dinu_melt[order(species), combi := lapply(unlist(.SD, function(x) combination(x))), by=species, .SDcols="freq"]; combinations
-
-
-#combinations <- mono_melt[, .(combi=lapply(nt, function(x) combn(x, 2))), by=species]; combinations
 
 
 ```
 
 (1+1+1+2 points) - Calculate (observed-expected)/expected score for each dinucleotide and each species. Which dinucleotides are overrepresented and which are underrepresented now when you have taken GC content into account? Is the over/underrepresentation reproducible for all sponge species? How would you explain it with biology in mind?
 ```{r}
+
+dinu_melt[, obs_exp := (freq-new_freqs)/new_freqs ]; dinu_melt
+
+OBS <- dinu_melt[, .(obs = obs_exp > 0 ), by=nt]; OBS
+
 
 
 ```
@@ -212,10 +212,11 @@ Single base substitutions (SBS) are a replacement of a certain nucleotide base w
 
 ## Task
 Your job is to analyze mutational signatures for patients with breast adenocarcinoma (**Breast-AdenoCA**). However, your lab colleagues have not given you one tidy table for breast cancer patients for analysis but many smaller tables containing the information for all the patients which you have to combine together into one to be able to perform the analysis. 
-
 The files at your disposal are the following:
 
 + MAIN TABLES containing the results from the program SigAnalyzer for mutational signatures SBS2 and SBS13 (each in a separate files, ***SBS2.RDS*** and ***SBS13.RDS***). The names of the columns and rows are missing, but you have been informed that colnames should be the name of the patients and rownames the genomic intervals. Values represent the probability of the mutational signature in specific genomic interval for each patient.
+
+
 + Table with ordered patients names. (***patients.txt***)
 + Table with ordered used genomic intervals for the SigAnalyzer. Some regions were filtered from the analysis due to low mappability. (***intervals.txt***)
 + Table with all the genomic intervals and special assigned names by your colleague. (***interval_names.txt***)
@@ -226,10 +227,102 @@ Your tasks are the following:
 
 + First, make one combined table from the tables containing results for SBS2 and SBS13 (***SBS2.RDS*** and ***SBS13.RDS***). Secondly, add a column "signature_mutations" containing the "SBS2" and "SB13" for the precise rows in the now combined (MAIN TABLE) table. (Must be done in this order for 2 pts)
 
+```{r}
+
+library(data.table)
+
+SBS2 <- readRDS("~/my_project/Homework4/Task3/SBS2.RDS")
+SBS13 <- readRDS("~/my_project/Homework4/Task3/SBS13.RDS")
+
+
+combined <- rbind(SBS2, SBS13)
+
+SBS_2 <- rep("SBS2", 2128)
+
+SBS_13 <- rep("SBS13", 2128)
+
+SBS <- c(SBS_2, SBS_13)
+
+combined <- combined[, signature_mutations := SBS]; combined
+
+
+```
+
+
 + Add patients name and special assigned genomic interval name by your colleague to the MAIN TABLE (8 pts) (Hints: Look at the both tables containing intervals. What is the difference between them? Think of your own unique way how can you fix that.). Work as tidy as you can in this task!
 
+```{r}
+
+column_intervals <- fread("~/my_project/Homework4/Task3/intervals.txt")
+column_special_names <- fread("~/my_project/Homework4/Task3/interval_names.txt"); column_special_names
+patients <- fread("~/my_project/Homework4/Task3/patients.txt")
+
+
+column_intervals[, chr := lapply(.SD, as.character), .SDcols= 1]; 
+ 
+column_intervals[, chr := lapply(column_intervals[,1], function(x) paste0("chr", x, sep=""))]; column_intervals
+
+setnames(column_special_names, "seqnames", "chr" )
+
+matching_lines <- merge(column_intervals, column_special_names, by=c("chr", "start", "end"))
+
+row_names <- matching_lines[, interval]
+
+row_final_table <- c(row_names, row_names)
+
+combined <- cbind(row_final_table, combined)
+
+col_names <- c("intervals", as.character(unlist(c(patients))))
+col_names <- c(col_names, "signature_mutations")
+
+
+setnames(combined,colnames(combined), col_names)
+
+combined
+
+```
 
 + From the file=**patientsCancerType.txt** add the appropriate cancer type for each patients (3 pts)
+```{r}
+patients_cancer_type <- fread("~/my_project/Homework4/Task3/patientsCancerType.txt"); patients_cancer_type
+
+setnames(patients_cancer_type, colnames(patients_cancer_type), c("variable", "cancer_type"))
+
+pat <- as.character(unlist(c(patients))); pat
+
+cancer_types <- unlist(lapply(pat, function(x) paste(x, patients_cancer_type[, V2[V1 == x]], ""))); cancer_types
+
+col_names_type <- c("intervals", cancer_types)
+col_names_type <- c(col_names_type, "signature_mutations")
+
+
+combined_paste <- copy(combined)
+
+#I HAVE MAINTAINED THE REQUIRED FORMAT OF THE TABLE (COLUMNS ARE PATIENTS AND ROWS ARE INTERVALS), IN THE COMBINED_PASTE TABLE, WHICH CONTAINS THE PATIENT WITH THE CANCER TYPE, BECAUSE I ALSO THOUGHT ABOUT ADDING A NEW LINE DOWN BUT I THOUGHT THIS WAS CLEARER. APART FROM THIS,  I HAVE CREATED ANOTHER TABLE WHICH IS MORE SUITABLE FOR THE NEXT EXERCISE. 
+
+setnames(combined_paste,colnames(combined), col_names_type)
+
+
+
+
+
+
+```
 
 + How many breast adenocarcinoma patients do you have and which one has the total highest probability for mutational signatures SBS2 and SBS13, respectively? (2 pts)
+```{r}
 
+combined_melt <- melt(combined, id.vars = c("intervals", "signature_mutations"),measure.vars = c(pat)); combined_melt
+
+combined_melt_merged <- merge(combined_melt, patients_cancer_type, by="variable"); combined_melt_merged
+
+breast_adeno <- sum(patients_cancer_type[, cancer_type=="Breast-AdenoCA"]); breast_adeno
+
+sumatorys <- combined_melt_merged[,  .(sums = sum(value[cancer_type == "Breast-AdenoCA"])), by=c("variable", "signature_mutations")]
+
+
+highest_SBS2 <- sumatorys[signature_mutations == "SBS2", variable[sums==max(sums)]]; highest_SBS2
+  
+highest_SBS13 <- sumatorys[signature_mutations == "SBS13", variable[sums==max(sums)]]; highest_SBS13
+
+```
