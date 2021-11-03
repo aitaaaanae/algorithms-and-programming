@@ -1,0 +1,334 @@
+---
+title: "Homework 4. Data manipulation"
+author: "Aitana"
+output: html_notebook
+---
+
+# 77% (34,75/45)
+
+# Deadline for homework is Sunday, 30.10.2021., 23.55 h
+
+# Instructions and RULES:
++ Perform all of the analysis using only data.table. 
++ It is allowed to use functions that are present in base R (DO NOT forget them as you may need to search them and use them in this homework).
++ All the solutions which use for loops will not be graded. Use the functions from the apply family!!!
++ If certain task contains detailed instructions how to solve something, then those instructions must be followed or these tasks will not be graded.
++ Whenever you are asked to show a certain value or values as an answer and if it is not precisely stated in which format should the answer be (data.table or a vector) then both answers are correct.
++ Manual calculations and writing the answers directly on the code chunk will not be taken into consideration without the proper coding steps (and/or saved variable) that confirm this answer.
+
+
+# Task 1. NMR peaks (10 pts)
+Goal: In this task you will have to upload multiple files in R and save certain calculation in a newly created format. You will be working with peak lists and intensity files for urine samples measured by 1H NMR (Psihogios NG, et al.). Files are located under the folder Task1.
+
+a) Import the files located in folder Task1. Make one table of all the imported files. The table must also have sample id (only the name of the file) and group name (severe kidney disease and healthy). (Since you have not learned regular expression and string manipulation, solve this task without it.). **Do not read files one at the time! Hard coding will not be evaluated!** (5)
+
+```{r}
+library(data.table)
+file_list1 <- list.files(path = "../Task1/Healthy", #paste0(getwd(), "/Task1/Healthy"), 
+                         full.names=T)
+#combined_files_h <- do.call("rbind", lapply(file_list1, read.csv))
+file_list2 <- list.files(path = "../Task1/Severe_kidney_disease", #path = paste0(getwd(), "/Task1/Severe_kidney_disease"), 
+                         full.names=T)
+
+dt1 <- do.call(rbind, lapply(file_list1, function(x) transform(read.csv(x), File = basename(x), group="Healthy")))
+dt2 <- do.call(rbind, lapply(file_list2, function(x) transform(read.csv(x), File = basename(x), group="Severe_kidney_disease")))
+
+data.names <- rbind(dt1, dt2)
+dt_data.names <- as.data.table(data.names)
+```
+<span style="color:green"> 5/5 pts great, now try to think of a ways to make u function to reduce the repeating of import. </span>
+
+b) Crate a new subdirectory under the directory "Task1" called "results" using R. Make an R object that contains two tables. You are going to save the R object in the created directory "results". The first table has the summary statistic of ppm of each group (sum, mean, median, min, max). While the second table contains the same summary statistics of ppm but only for three patient with severe kidney disease that have the highest overall intensity. The calculated results must be in rows and groups/patients in columns. (5)
+```{r}
+init_folder <- getwd()
+setwd(init_folder)
+newfolder <- paste(getwd(),"Task1","results",sep="/")
+if(!dir.exists(newfolder)){ dir.create(newfolder) }
+
+
+
+statistics <- t(dt_data.names[, .(sum=sum(ppm), mean=mean(ppm), median=median(ppm), min=min(ppm), max=max(ppm)), by=group])
+statistics_higher <- t(dt_data.names[order(-rank(INTENSITY)), head(.SD, 3), by=group][,.(sum=sum(ppm), mean=mean(ppm), median=median(ppm), min=min(ppm), max=max(ppm)), by=group])
+
+
+
+save(statistics, statistics_higher, file = (paste0(getwd(), "/Task1/results/result_data.RData")))
+
+```
+
+<span style="color:red"> 2.5/5 pts Formating of the table is not correct. Groups should be in column names and not the elements of the columns. Also you needed to calculate individually for three patients with the highest intensity. Finding those 3 patients and reporting their calculations. You can use the ordinary table trick to remove first row and add it as the column names or awesome function transpose from data.table instead of t(). </span>
+
+# Task 2. GC content sponges (20 pts)
+Table mononucleotides.txt and dinucleotides.txt contain mono/dinucleotide counts in 7 different sponge species. Use all data.table operations as you need them in these task. 
+Your tasks are as follows:
+```{r}
+
+mononucleotides <- data.table::fread("http://hex.bioinfo.hr/~mfabijanic/mononucleotides.txt")
+dinucleotides <- data.table::fread("http://hex.bioinfo.hr/~mfabijanic/dinucleotides.txt")
+
+
+mono_dt <- as.data.table(mononucleotides)
+dinu_dt <- as.data.table(dinucleotides)
+```
+
+(3 pts) - Change name of the first column to "species". Calculate mono/dinucleotide frequencies for each species (do this with and without *melt* function and in later tasks proceed with only one table of your choice).
+
+```{r}
+setnames(mono_dt, "rn", "species")
+setnames(dinu_dt, "rn", "species")
+
+
+
+mono_dt[, sums:=NULL]
+
+
+#A) without melt
+frequency_table <- function(dt) {
+
+columns <- c(colnames(dt[,-1]))
+             
+colnew <-  unlist(lapply(columns, function(x) paste("freq_", x)))
+
+cp <- copy(dt)
+
+frequency <- cp[, sums := rowSums(dt[, -1])][, (colnew) := lapply(.SD, function(x) x/sums), .SDcols = columns]
+
+dt[, sums:=NULL]
+
+return(frequency)
+
+}
+frequency_table(mono_dt)
+frequency_table(dinu_dt)
+
+
+```
+
+
+```{r}
+
+#B) with melt
+
+melt_freq <- function(dt) {
+
+(melt(dt, measure.vars = c(colnames(dt[,-1])), variable.name = "nt", value.name = "value") -> dt_freq )
+
+dt_freq <- dt_freq[, sums := sum(value), by=species][, freq := value/sums, by=species]; dt_freq
+
+return(dt_freq)
+
+dt_freq[, sums:=NULL]
+
+}
+
+
+
+mono_melt <- melt_freq(mono_dt)
+dinu_melt <- melt_freq(dinu_dt)
+
+mono_melt; dinu_melt
+
+mono_melt[, sums:=NULL]
+dinu_melt[, sums:=NULL]
+
+```
+
+<span style="color:green"> 3/3 pts </span>
+
+(3 pts) - Calculate GC content in each sponge and add it as a column to the dinucleotide frequency table.
+
+```{r}
+GCs <- mono_melt[, .(GC_content = (sum(freq[(nt == "C" | nt == "G")])/sum(freq))*100), by=species]; GCs
+
+
+dinu_melt <- merge(dinu_melt, GCs, by="species"); dinu_melt
+
+```
+<span style="color:green"> 3/3 Nice usage of the merge :D  </span>
+
+
+(1+1+1+1 pts) - If all dinucleotides are equally probable, what is the probability for any of them = expected frequency? Which dinucleotide is underrepresented? Which are overrepresented? Are they reproducibly over/underrepresented in all sponges?
+
+```{r}
+expected_freq <- 1/16
+
+dinu_melt_over_under <- copy(dinu_melt)
+
+dinu_melt_over_under <- dinu_melt_over_under[, over_under := lapply(.SD, function(x) ifelse(x > expected_freq, "over", "under")), .SDcols="freq"]; dinu_melt_over_under
+
+
+over_under <- dinu_melt_over_under[, .(over_under = over_under == "over"), by=nt]; over_under
+
+#THE TABLE REPRESENTS THE NT THAT ARE OVER REPRESENTED FOR EACH SPECIES. THE ONES THAT ARE TRUE FOR ALL THE SPECIES ARE THE ONES THAT HAVE TRUE IN THE COLUMN OVER_UNDER 5 TIMES. FOR EXAMPLE AA, AT, CA, TG, TT 
+
+```
+<span style="color:red"> 2/4 Not completely correct sentence: THE ONES THAT ARE TRUE FOR ALL THE SPECIES ARE THE ONES THAT HAVE TRUE IN THE COLUMN OVER_UNDER 5 TIMES. You mean 7 times because there are 7 sponges. Also, the changes are close to 0 but what if the expected_freq was equal to calculated value? You have to take that into an account. Better examination of the final table</span>
+
+(5 points) - Since GC content differs between sponge species (not all mononucleotides are equally represented), the expected frequency for dinucleotides will not be the same for each sponge species. Calculate the expected frequency for each dinucleotide in each sponge species (*from mononucleotide table*) and add it to a column in dinucleotide frequency table.
+
+```{r}
+
+expand_grid <- mono_melt[, unique(expand.grid(mono_melt[, nt], mono_melt[, nt])), by=species]
+setnames(expand_grid, "Var1", "nt")
+setnames(expand_grid, "Var2", "nt1")
+
+nucleotid1<-as.character(expand_grid[, nt])
+nucleotid2<-as.character(expand_grid[, nt1])
+sp<-expand_grid[, species]
+
+
+nucl1<-function(x, y){
+  result<-mono_melt[, freq[nt==x & species==y]]
+  result
+}
+
+
+expand_grid[, frec1 := mapply(nucl1, nucleotid1, sp)]
+expand_grid[, frec2 := mapply(nucl1, nucleotid2, sp)]
+
+new_freq <- expand_grid[, frec1*frec2]
+
+
+dinu_melt <- dinu_melt[order(species),  new_freqs := new_freq]; dinu_melt
+
+
+
+```
+<span style="color:green"> 5/5 </span>
+
+
+(1+1+1+2 points) - Calculate (observed-expected)/expected score for each dinucleotide and each species. Which dinucleotides are overrepresented and which are underrepresented now when you have taken GC content into account? Is the over/underrepresentation reproducible for all sponge species? How would you explain it with biology in mind?
+```{r}
+dinu_melt[, obs_exp := (freq-new_freqs)/new_freqs ]; dinu_melt
+
+OBS <- dinu_melt[, .(obs = obs_exp > 0 ), by=nt]; OBS
+```
+
+<span style="color:red"> 2/5 Comments on the results as well as biological explanation are missing. What about those under score 0?</span>
+
+# Task 3. Mutational signatures in human cancer (15 pts)
+
+## Short introduction
+Mutational signatures are characteristic combinations of mutation types arising from specific mutagenesis processes such as DNA replication infidelity, exogenous and endogenous genotoxins exposures, defective DNA repair pathways and DNA enzymatic editing. Type of mutations that occur are base subsitutions, indels and structural variants. 
+Single base substitutions (SBS) are a replacement of a certain nucleotide base with another base. Considering the pyrimidines of the Watson-Crick base pairs, there are only six different possible substitutions: C>A, C>G, C>T, T>A, T>C, and T>G. Current SBS signatures have been identified using 96 different contexts, considering not only the mutated base, but also the bases immediately 5’ and 3’. Detailed examples of those SBS signatures can be found at https://cancer.sanger.ac.uk/cosmic/signatures/SBS/. 
+
+## Task
+Your job is to analyze mutational signatures for patients with breast adenocarcinoma (**Breast-AdenoCA**). However, your lab colleagues have not given you one tidy table for breast cancer patients for analysis but many smaller tables containing the information for all the patients which you have to combine together into one to be able to perform the analysis. 
+The files at your disposal are the following:
+
++ MAIN TABLES containing the results from the program SigAnalyzer for mutational signatures SBS2 and SBS13 (each in a separate files, ***SBS2.RDS*** and ***SBS13.RDS***). The names of the columns and rows are missing, but you have been informed that colnames should be the name of the patients and rownames the genomic intervals. Values represent the probability of the mutational signature in specific genomic interval for each patient.
+
+
++ Table with ordered patients names. (***patients.txt***)
++ Table with ordered used genomic intervals for the SigAnalyzer. Some regions were filtered from the analysis due to low mappability. (***intervals.txt***)
++ Table with all the genomic intervals and special assigned names by your colleague. (***interval_names.txt***)
+
+The analysis was performed on the pre-selected genomic intervals of 1 Mb (***intervals.txt***) and those intervals are the ones that should be added to the combined table of files ***SBS2.RDS*** and ***SBS13.RDS***. However, your colleague wants to have the special names of the genomic intervals in that file, the ones found under the column **interval** in the file ***interval_names.txt***. 
+
+Your tasks are the following:
+
++ First, make one combined table from the tables containing results for SBS2 and SBS13 (***SBS2.RDS*** and ***SBS13.RDS***). Secondly, add a column "signature_mutations" containing the "SBS2" and "SB13" for the precise rows in the now combined (MAIN TABLE) table. (Must be done in this order for 2 pts)
+
+```{r}
+
+library(data.table)
+
+SBS2 <- readRDS("../Task3/SBS2.RDS")
+SBS13 <- readRDS("../Task3/SBS13.RDS")
+
+
+combined <- rbind(SBS2, SBS13)
+
+SBS_2 <- rep("SBS2", 2128)
+
+SBS_13 <- rep("SBS13", 2128)
+
+SBS <- c(SBS_2, SBS_13)
+
+combined <- combined[, signature_mutations := SBS]; combined
+
+
+```
+<span style="color:green"> 2/2  </span>
+
+
++ Add patients name and special assigned genomic interval name by your colleague to the MAIN TABLE (8 pts) (Hints: Look at the both tables containing intervals. What is the difference between them? Think of your own unique way how can you fix that.). Work as tidy as you can in this task!
+
+```{r}
+
+column_intervals <- fread("../Task3/intervals.txt")
+column_special_names <- fread("../Task3/interval_names.txt"); column_special_names
+patients <- fread("../Task3/patients.txt")
+
+
+column_intervals[, chr := lapply(.SD, as.character), .SDcols= 1]; 
+ 
+column_intervals[, chr := lapply(column_intervals[,1], function(x) paste0("chr", x, sep=""))]; column_intervals
+
+setnames(column_special_names, "seqnames", "chr" )
+
+matching_lines <- merge(column_intervals, column_special_names, by=c("chr", "start", "end"))
+
+row_names <- matching_lines[, interval]
+
+row_final_table <- c(row_names, row_names)
+
+combined <- cbind(row_final_table, combined)
+
+col_names <- c("intervals", as.character(unlist(c(patients))))
+col_names <- c(col_names, "signature_mutations")
+
+
+setnames(combined,colnames(combined), col_names)
+
+combined[.N]
+```
+
+<span style="color:red"> 6/8 When doing the merging you are losing your original ordering of intervals. You had to use merge(., sort=FALSE) or some other way to correct this. </span>
+
+
++ From the file=**patientsCancerType.txt** add the appropriate cancer type for each patients (3 pts)
+```{r}
+patients_cancer_type <- fread("../Task3/patientsCancerType.txt"); patients_cancer_type
+
+setnames(patients_cancer_type, colnames(patients_cancer_type), c("variable", "cancer_type"))
+
+pat <- as.character(unlist(c(patients))); pat
+
+# Corrected by PS
+cancer_types <- unlist(lapply(pat, function(x) paste(x, patients_cancer_type[, cancer_type[variable == x]], "")))#unlist(lapply(pat, function(x) paste(x, patients_cancer_type[, V2[V1 == x]], ""))); cancer_types # PS V2 does not exist. You have changed it to cancer_type. 
+
+col_names_type <- c("intervals", cancer_types)
+col_names_type <- c(col_names_type, "signature_mutations")
+
+
+combined_paste <- copy(combined)
+
+#I HAVE MAINTAINED THE REQUIRED FORMAT OF THE TABLE (COLUMNS ARE PATIENTS AND ROWS ARE INTERVALS), IN THE COMBINED_PASTE TABLE, WHICH CONTAINS THE PATIENT WITH THE CANCER TYPE, BECAUSE I ALSO THOUGHT ABOUT ADDING A NEW LINE DOWN BUT I THOUGHT THIS WAS CLEARER. APART FROM THIS,  I HAVE CREATED ANOTHER TABLE WHICH IS MORE SUITABLE FOR THE NEXT EXERCISE. 
+
+setnames(combined_paste,colnames(combined), col_names_type)
+```
+<span style="color:red"> 1.75/3 it is nice that you are not changing the column type by adding a new row. However, this type of adding information is not tidy. In this task you were asked to work as tidy as you can.  </span>
+
+
++ How many breast adenocarcinoma patients do you have and which one has the total highest probability for mutational signatures SBS2 and SBS13, respectively? (2 pts)
+```{r}
+
+combined_melt <- melt(combined, id.vars = c("intervals", "signature_mutations"),measure.vars = c(pat)); combined_melt
+
+combined_melt_merged <- merge(combined_melt, patients_cancer_type, by="variable"); combined_melt_merged
+
+breast_adeno <- sum(patients_cancer_type[, cancer_type=="Breast-AdenoCA"]); breast_adeno
+
+sumatorys <- combined_melt_merged[,  .(sums = sum(value[cancer_type == "Breast-AdenoCA"])), by=c("variable", "signature_mutations")]
+
+
+highest_SBS2 <- sumatorys[signature_mutations == "SBS2", variable[sums==max(sums)]]; highest_SBS2
+  
+highest_SBS13 <- sumatorys[signature_mutations == "SBS13", variable[sums==max(sums)]]; highest_SBS13
+
+```
+<span style="color:green"> 2.5/2 Why haven't you submitted this melt solution to the previous task since it perfectly solve all the issues you may be facing working with the previously non-tidy generated table? You are working breast adenocarcinoma as it is stated here and in the goal of this task. The sumatorys table contains all the patients when it should contain only  Breast-AdenoCA. You get the correct solution since SBS2 and SBS13 are most abundant and present in breast cancer and often not in other type of cancers. Because you used melt here instead of the previous task you are getting one extra point (+1) </span>
+
+
+
