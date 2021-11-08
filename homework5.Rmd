@@ -1,0 +1,120 @@
+---
+title: "homework5"
+output: html_document
+---
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(magrittr)
+library(stringr)
+Breeding_Performance_Lnc1_190815 <- read_csv("Breeding_Performance_Lnc1_190815.csv")
+#View(Breeding_Performance_Lnc1_190815)
+library(tibble)
+
+df_breeding <- tibble(Breeding_Performance_Lnc1_190815)
+
+names(df_breeding)[2] <- 'Father'
+
+names(df_breeding)[3] <- 'Mother'
+
+names(df_breeding)[4] <- 'knockout'
+
+names(df_breeding)[5] <- 'hetero'
+
+names(df_breeding)[6] <- 'homo+'
+
+names(df_breeding) <- gsub("\\s+", "_", names(df_breeding))
+
+df_final <- select(df_breeding, -c(Timeline, D.O.B, D.O.L))
+
+#When I run the code, a warning message appears but the code works, and the variable df_final is created. 
+```
+
+Find breeding events where ratio of female-to-male pups is at least 2.5. Take in account only rows where you have at least one alive pup. Arrange result by age of mother from older to younger. You don’t need to assign result to a variable, printing result is ok. (1 point)
+
+```{r}
+df_final %>%
+  arrange(Mother) %>%
+  mutate(alive = Total-Dead, na.rm = TRUE) %>%
+  filter(alive != 0) %>%
+  summarise(female_male = Female/Male) %>%
+  filter(female_male >= 2.5) 
+
+```
+c) Find the id(s) of the cage(s) with most births of full knock-out pups. Printing result is ok (1 point)
+```{r}
+df_final %>%
+    arrange(-knockout) %>%
+    filter(knockout == knockout[1]) %>%
+    select(Cage)
+
+```
+
+d) Find mean age of the mothers at the day of mating which gave births to litters without any dead-born pups. Average gestation period for mice is 21 days. Printing result is ok. (1 point)
+```{r}
+df_final %>%
+    filter(Dead != 0) %>%
+    mutate(age_of_mating = Age_of_mother_in_days-21) %>%
+    summarise(mean_age_of_mating =mean(age_of_mating))
+```
+Find numbers of dead pups born for each combination of mother/father genotypes, but take in account only cases where mother and father have the same genotype. P. R. I. O. (1 point)
+```{r}
+df_final %>%
+    group_by(Mother, Father) %>%
+    summarize(dead_pups = sum(Dead))%>%
+    filter(Mother == Father)
+```
+
+
+Create a new variable based on the age of mother with two values - young and old. Breakpoint should be at 36 weeks. For each age category calculate the mean number of male and female pups. Final table should be in tidy format with 3 columns - age category of mother, sex of the pup and mean value. Shockingly, printing result is still ok. (3 points)
+
+```{r}
+df_final %>%
+    mutate(young_old = ifelse(Age_of_mother_In_weeks <= 36, "young", "old")) %>%
+    group_by(young_old)%>%
+    summarize(female_pups= sum(Female), male_pups= sum(Male))
+    
+```
+2. What are RPKM and FPKM units? What’s the difference between RPKM and FPKM, when do we use one and when the other? Why are we going to calculate FPKM and not RPKM for this assignment? When calculating FPKM/RPKM units, which 2 technical biases in sequenced data counts are we correcting for? Write the general formula used to calculate FPKM/RPKM units from raw counts. (3 points)
+
+In RNAseq, expression units are necessary to remove technical biases in sequenced data such as depth of sequencing (more sequencing depth produces more read count for gene expressed at same level) and gene length (differences in gene length generate unequal reads count for genes expressed at the same level; longer The longer the gene, the more the read count. 
+
+RPKM represents the number of reads mapped to a gene multiplied by 10^3 and by 10^6, and all that divided by the total number of mapped reads from a given library multiplied by the gene length in bp. Here, 10^3 normalizes the gene length and 10^6 normalizes the sequencing depth. 
+
+FPKM (Fragments per kilo base per million mapped reads) is analogous to RPKM and used especially in paired-end RNA-seq experiments. In paired-end RNA-seq experiments, two (left and right) reads are sequenced from same DNA fragment. When we map paired-end data, both reads or only one read with high quality from a fragment can map to reference sequence. To avoid confusion or multiple counting, the fragments to which both or single read mapped is counted and represented for FPKM calculation.
+
+Both RPKM and FPKM take into account the gene length for normalization, and the depth of the sequencing (mentioned above). 
+
+We are going to use the FPKM in this case because, as it indicates in the R code, the data from the file was obtained by pair-end sequencing. 
+
+$$
+RPKM=\frac{Genes mapped to a gene transcript*10^6*10^3}{Total reads * Transcript length}
+$$
+FPKM is very similar to RPKM. RPKM was made for single-end RNA-seq, where every read corresponded to a single fragment that was sequenced. FPKM was made for paired-end RNA-seq. With paired-end RNA-seq, two reads can correspond to a single fragment, or, if one read in the pair did not map, one read can correspond to a single fragment. The only difference between RPKM and FPKM is that FPKM takes into account that two reads can map to one fragment (and so it doesn’t count this fragment twice). The formula is the same, but taking this into account. 
+
+
+Get FPKM normalized values from raw counts stored in table ensembl.GRCm38.89.CNOT6L.summarizedOverlaps.chr5.csv. Final output should be a tibble with same dimensions as original table but with FPKM values instead of raw reads. (10 points) You’ll get bonus 2 points if you do the whole assignment (not including reading tables, but this is also possible) as one big pipe
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(magrittr)
+library(readr)
+library(stringr)
+
+samples <- read_csv("CNOT6L.sample_table.csv")
+lengths <- read_csv("ensembl.89.GRCm38.p5.20180615.UCSCseqnames.geneInfo.chr5_chr6.csv")
+summarized_overlaps <- read_csv("ensembl.GRCm38.89.CNOT6L.summarizedOverlaps.chr5.csv")
+
+(tidy <- pivot_longer(data = summarized_overlaps, cols = 2:19,  names_to = "sample_id", values_to = "reads", values_drop_na = TRUE))  %>% left_join(., lengths, by="gene_id") %>% select(., 1:4) %>% mutate_at(.vars = "sample_id", 
+            .funs = gsub,
+            pattern = "\\..*",
+            replacement = "")  %>% left_join(., samples, by="sample_id")  %>% select(., -c(stage, genotype, bam_path)) %>% mutate(FPKM= ((reads)/(total_exon_length_sum*library_size))*(10^9)) %>% select(., -c(total_exon_length_sum, library_size, reads))  %>%  pivot_wider(data = ., 
+            names_from = sample_id, 
+            values_from = FPKM) 
+
+```
+
