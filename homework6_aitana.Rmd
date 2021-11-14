@@ -1,0 +1,147 @@
+---
+title: "homework6"
+output: html_document
+---
+
+```{r}
+library(data.table)
+library(ggplot2)
+library(tidyr)
+library(tidyverse)
+works <- fread("http://hex.bioinfo.hr/~mfabijanic/works.txt", header = T)
+```
+
+
+```{r}
+
+p <- ggplot(works, aes(Lecturer, GradeNumerical))+ geom_violin()+ scale_y_continuous(breaks = seq(1,5,by=1), trans="reverse", labels = c("Excellent","Good", "Average", "Below average", "Extremely Bad"))+geom_jitter(aes(colour = Gender))+labs(y="Grade")
+
+p
+
+
+```
+
+
+
+```{r}
+df <- read.delim("http://hex.bioinfo.hr/~mfabijanic/df.txt", header=T)
+
+rec <- c("Strongly no", "No", "Maybe")
+values <- c(0, 0, 0)
+
+df_values <- df %>% group_by(recommend) %>% summarize(value = n()) %>% add_row(., recommend=rec, value=values)
+
+vect_order <- c("Strongly no", "No", "Maybe", "Yes", "Strongly yes")
+
+p <-ggplot(data=df_values, aes(x=factor(recommend, level=vect_order), y=value, fill=recommend))+geom_bar(stat = "identity", color="black", show.legend=FALSE)+ scale_fill_manual(values=c( "#ffffbf", "#a6d96a",  "#1a9641", "#1a9641", "#a6d96a"))+labs(x="Will you recommend #NGS school to your friends and colleagues?", y="Number of people")
+p
+```
+Create any plot you want from the data. Make some comparisons for different groups (use facets). Make some meaningful conclusion from it.
+```{r}
+
+compare <- ggplot(works, aes(x=Position, y=GradeNumerical, color=Gender)) + geom_jitter()+facet_wrap(~Background)
+compare
+
+
+```
+Generally, the participants with a background of more dry lab (computational background) give greater grades than the ones with a background of more wet lab. Independently of the background, we can see that generally the participants that grade lecturers worse are the ones that are PhD and PostDoc, and we also can appreciate a gender component, as female participants grade lecturers better than male participants. The worst grades are generally given by male participants. 
+
+```{r}
+ggplot(df_values, aes(x = "", y = value, fill = recommend)) +
+  geom_col() +
+  coord_polar(theta = "y")+theme_void()
+```
+
+
+
+```{r}
+library(data.table)
+rm_table <- fread("RepeatMaskerMousechr12.txt")
+translator <- read.csv("filtering.csv", header=F)
+
+rm_table
+
+translator
+```
+
+
+```{r}
+
+translator_dt <- translator %>% mutate_if(is.factor, as.character) 
+names(translator_dt)[2] <- 'repName'
+tidy <- inner_join(translator_dt, rm_table, by="repName") %>% select(-c(V1, V3, V4)) %>% relocate(repName, .after = strand)  
+
+tidy
+
+translator
+```
+```{r}
+
+count_df <- tidy %>% mutate(Length = genoEnd-genoStart)  
+
+count_df
+
+
+plot <- ggplot(count_df, aes(x=Length, fill=repName))+geom_histogram(position="dodge")
+plot
+
+```
+
+
+
+
+
+```{r}
+
+plot_split <- ggplot(count_df, aes(x=Length, fill=repName))+geom_histogram()+facet_wrap(~repName)
+plot_split
+
+
+
+
+```
+
+
+D. 2 points Visualise lengths for Classes in filtering.csv separately, with density graphs showing for each RepName belonging to a class. Use transparency 0.5.
+```{r}
+tidy_2 <- inner_join(translator_dt, rm_table, by="repName") %>% select(-c(V3, V4)) %>% mutate(Length = genoEnd-genoStart)
+plot_class = ggplot(tidy_2, aes(x = Length, fill=repName)) + geom_density(alpha=0.5) +facet_wrap(~V1)
+plot_class
+```
+D. Show the class and RepName and both histograms and density plot (make only the line visible from density plot)
+```{r}
+tidy_2 <- inner_join(translator_dt, rm_table, by="repName") %>% select(-c(V3, V4)) %>% mutate(Length = genoEnd-genoStart)
+
+hist <- ggplot(tidy_2, aes(x=Length, fill=repName)) + geom_histogram(aes(y=..density..))+facet_wrap(~V1 + repName)
+hist <- hist+geom_density(); hist
+
+```
+
+```{r}
+
+
+tidy_filter <- inner_join(translator_dt, rm_table, by="repName") %>% mutate(Length = genoEnd-genoStart) %>% mutate(Filtered_or_not=ifelse((Length >= V3 & Length <= V4), "Filtered", "Not Filtered")) %>% mutate(Old_new = "Not Filtered")
+filtered <- tidy_filter %>% filter((Length >= V3 & Length <= V4)) %>% mutate(Old_new = "Filtered")
+
+
+all_data <- rbind(tidy_filter, filtered)
+
+
+plot_filtered <- all_data %>% mutate(across(Old_new, factor, levels=c("Not Filtered", "Filtered"))) %>% ggplot(aes(x=Length, fill=repName)) + geom_histogram()+facet_grid(repName~Old_new)
+plot_filtered
+
+
+```
+
+E. Visualise percentage of each class lost in filtering:
+
+```{r}
+tidy_3 <- inner_join(translator_dt, rm_table, by="repName") %>% mutate(Length = genoEnd-genoStart) %>% mutate(Filtered_or_not=ifelse((Length >= V3 & Length <= V4), "Filtered", "Not Filtered"))
+
+percent <- tidy_3 %>% group_by(repName, Filtered_or_not) %>% summarize(count=sum(n())) %>% group_by(repName) %>% mutate(percent= count/sum(count)); percent
+
+plot_fractions <- percent  %>% ggplot(aes(x=repName, y=percent, fill=factor(Filtered_or_not, levels=c("Not Filtered", "Filtered")))) + geom_col()+ labs(x = "Repeat name", y= "Fraction", fill = "Type")+ scale_fill_discrete(breaks=c("Not Filtered", "Filtered"), labels=c("Lost by Filtering","Retained after filtering"))
+plot_fractions
+
+```
+
