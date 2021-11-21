@@ -319,15 +319,11 @@ GC_content <- (sum(letterFrequency(genome, "GC")))/sum(width(genome)); GC_conten
 
 frequenciesG <- letterFrequency(genome,  "G")
 
-totalfreqG <- unlist(sum(frequenciesG))
+totalfreqG <- unlist(sum(frequenciesG))/sum(width(genome))
 
 frequenciesC <-  letterFrequency(genome,  "C")
 
-totalfreqC <- unlist(sum(frequenciesC))
-
-#lengths <- sum(width(genome))
-
-#expectedGC <- (as.numeric(totalfreqG)*as.numeric(totalfreqC))/lengths
+totalfreqC <- unlist(sum(frequenciesC))/sum(width(genome))
 
 expectedGCs <- (as.numeric(totalfreqG)*as.numeric(totalfreqC))*width(cds)
 
