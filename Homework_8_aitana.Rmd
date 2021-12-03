@@ -1,0 +1,644 @@
+
+---
+title: "Homework 8"
+author: "Aitana Egea Lavandera"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Instructions
+
++ you can use any package from this list and base R unless stated differently:
+
+    +  dplyr
+    +  tidyr
+    +  tibble
+    +  data.table
+    +  magrittr
+    +  stringr
+    +  IRanges
+    +  Biostrings
+    +  GenomicRanges
+    +  biomaRt
+
++ use of *for loop* is forbidden
+
++ you can use any variable names, but try to use informative and logical names
+
++ print out your final solution at the end of each code chunk or task
+
++ for all tasks you’ll need to read data into R from tables. You’re allowed to use functions from any package (readr, data.table) for that.
+
++ you’re allowed to use stringr package in all of the exercises
+
++ almost all the assignments are based on the authentic data and represent real analyses and problems we face as bioinformatician in our day-to-day work. As such, this homework should give you at least some idea about a kind of work you could be doing one year from now (if you want to do bioinformatics and you manage to pass this homework and whole module of course)
+
++ you will have to read a bit more for this homework because some tasks require additional context
+
+
+# Task 1. LTR insertions (GRanges)
+
+Retrotransposons are genomic elements which evolved from ancient retroviruses. They can amplify themselves in the genome via copy-and-paste mechanism and substantially contribute to mammalian genome content. Retrotransposon amplification threatens genome integrity through insertional mutations and chromosomal aberrations. However, at the same time they can also provide functional gene parts and contribute to genome plasticity. LTR retrotransposons are one particular class of retrotransposons, named for the presence of long terminal repeats - identical sequences of DNA on either end of retrotransposon that repeat hundreds or thousands of times. At the time of insertion, an LTR carries a functional promoter, a transcription start site (TSS), and a polyadenylation site [poly(A)]. In addition, LTRs may carry a splice donor (SD) and even a functional AUG codon. Taking this in account, LTR retrotransposons can reshape the genome at the site of the insertion by transcriptional activation, changing protein-coding sequences or producing non-coding RNAs. You may find more about LTRs and their role in evolution in the paper:
+
+    Franke, V., Ganesh, S., Karlic, R., Malik, R., Pasulka, J., Horvat, F., Kuzman, M., Fulka, H. et al. (2017) Long terminal repeats power evolution of genes and gene expression programs in mammalian oocytes and zygotes. Genome Res, 27, 1384-1394.
+
+
+We want to explore role of young MT2 LTRs insertions in reshaping mouse genome. In the table **http://hex.bioinfo.hr/~pstancl/rmsk.mm10.20180919.MT2A_B.fa.out.csv** you will find coordinates of all MT2A and MT2B insertions in mm10 mouse genome, as annotated by RepeatMasker program. You will have to download coordinates of all exons of all Ensembl annotated genes on chromosome 1 in mm10 mouse genome using **biomaRt** (get chromosome names; exon start, exon end, exon width and exon strand, gene id (standard ensembl id) and gene type).
+```{r}
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(data.table)
+library(magrittr)
+library(stringr)
+library(IRanges)
+library(Biostrings)
+library(GenomicRanges)
+library(biomaRt)
+library(ggplot2)
+
+LTR <- data.table::fread("http://hex.bioinfo.hr/~pstancl/rmsk.mm10.20180919.MT2A_B.fa.out.csv") %>% filter(chr == "chr1")
+ 
+LTR
+
+
+
+
+
+
+```
+For this assignment you need to primarily use functions from GenomicRanges/IRanges package. You may also use some dplyr/data.table functions if you need them. Piping is allowed, but not enforced. Try to solve whole exercise as a whole - if you create an object in one assignment try to use it again in some other assignment if possible; avoid using repetitive code. You may use pipes if you want.
+
+a) Import both tables to R and transform them to GRanges object. Since you have data only for exons on chromosome 1, filter LTR coordinates to include only insertions on chromosome 1. Find all the genes which have LTR insertion anywhere in their gene body. Also, find all LTRs inserted into genes. Assign both to new GRanges objects. (3 points)
+
+```{r}
+ensembl <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
+
+
+annot<-getBM(c("ensembl_gene_id", "chromosome_name", "strand", "exon_chrom_start","exon_chrom_end", "gene_biotype"), filters = "chromosome_name", values = 1, mart=ensembl)
+
+annot <- annot %>% mutate(width =exon_chrom_end-exon_chrom_start) %>% mutate(chromosome_name = "chr1")  %>% mutate(strand = ifelse(strand==1, "+", "-"))
+
+```
+Find all the genes which have LTR insertion anywhere in their gene body. Also, find all LTRs inserted into genes. Assign both to new GRanges objects. (3 points)
+
+```{r}
+
+grange_1 <- GRanges(annot)
+grange_ltr <-  GRanges(LTR)
+overlaps <- findOverlaps(grange_ltr, grange_1)
+ltr_in_genes <- grange_ltr[queryHits(overlaps)]
+genes_with_ltr <- grange_1[subjectHits(overlaps)]
+```
+
+b) Out of all insertions of LTRs into genes, how many insertions are in sense and how many in antisense direction when compared to the gene into which they are inserted? (2 points)
+
+```{r}
+overlaps_ignore_strand <- findOverlaps(grange_ltr, grange_1, ignore.strand=TRUE) #When we ignore the strand, we are taking into account those that are in sense and those in antisense with the gene in which they're inserted. 
+
+ltr_in_genes_is<- grange_ltr[queryHits(overlaps_ignore_strand)] #We subset all the insertions, regardless of the strand. 
+
+var1b <- length(ltr_in_genes_is)-length(ltr_in_genes); var1b #By substracting the result taking into account the strand from the number ignoring the strand, we obtain the ones that are inserted in antisense from the genes in which they are inserted.  
+
+ 
+```
+
+
+c) If you check exonic coordinates provided in a table, you will notice that some of the annotated exons overlap. What are 2 biological reasons for that overlap? Use a function from GenomicRanges packages to get:
+
+* GRanges object containing non-overlapping set of coordinates of any region annotated as exon
+
+Overlapping genes (OLGs) are two adjacent DNA segments that are partially or entirely overlapped with each other. These genes are present in the viral, prokaryotic, and eukaryotic genomes. These genes utilize two different reading frames or initiation codons for encoding more than one protein. Since both coding (sense strand) and non-coding (antisense strand) strands are utilized during transcription, an OLG can originate from the overlapping of two genes on the same strand or the opposite strand. Reasons for this overlapping genes: 
+
+- The development of an OLG may involve the extension of an open reading frame, which can be resulted from the start or stop codon substitutions
+
+- Elimination of start or stop codons due to deletions and frameshifts.
+
+
+```{r}
+
+non_oL <- reduce(grange_1); non_oL
+
+
+```
+
+
+
+* GRangesList object containing non-overlapping set of coordinates of any region annotated as exon for each gene. Assign this object to new variable, you will need it for the next assignment. (4 points)
+
+```{r}
+
+grl <- split(grange_1, grange_1$ensembl_gene_id )
+
+grl_redux <- reduce(grl); grl_redux
+
+
+```
+
+d) How many LTRs are inserted into intronic region of genes? (2 points)
+
+```{r}
+
+ grlGaps<-function(grl) {
+ 
+   psetdiff(unlist(range(grl),use.names=FALSE),grl)
+ }
+
+
+introns <- grlGaps(grl_redux); introns
+
+introns_unlist <- unlist(introns)
+
+ltr_in_introns <- subsetByOverlaps(grange_ltr, introns)
+
+total_ltr <- length(ltr_in_introns); total_ltr
+
+  
+#I don't know if they have to be INSIDE, but if they have to , I would just add to subsetbyoverlaps type="within"
+```
+
+
+
+e) LTR insertions provide promoters which can boost the transcription up to 120 kb downstream. Find all the LTRs inserted into intergenic region of the genome. How many of them have at least one gene closer than 120 kb downstream? (4 points)
+
+NOTE : I did this exercise in two different ways, using different combinations of functions. The first one is precede, but the problem I found is that precede doesn't take into account overlapping ranges, so I used flank also in order to obtain my results. 
+
+```{r}
+
+intergenic_regions <- gaps(unlist(range(grl_redux))) 
+
+LTR_intergenic <- subsetByOverlaps( grange_ltr, intergenic_regions)
+
+# I used the function precede: For each range in the intergenic LTR, precede returns the index of the interval in subject that is directly preceded by the query range
+ranges_genes <- unlist(range(grl_redux))
+downstreamGenes <- precede(LTR_intergenic, ranges_genes)
+
+# then, I subset those indexes in the grange_1 object, obtaining the distance between each ltr and downstream gene
+dist <- distance(LTR_intergenic, ranges_genes[downstreamGenes])
+ltr_closer_120000 <- dist[dist < 120000]; length(ltr_closer_120000)
+```
+This is another way to do this, but the problem was that findoverlaps could retrieve genes that were upstream from the LTR, so I had to use dplyr to filter only the cases in which the gene is downstream from the LTR. 
+
+```{r}
+flank <- flank(LTR_intergenic, 120000, start=FALSE) #I find the flanking region 120000 pb downstream of LTR_intergenic (start=FALSE)
+
+ltr_with_120000 <- findOverlaps(ranges_genes, flank) #I find the genes that overlap with the flanking regions, but I have to elliminate those that overlap and are in downstream. For that purpose, I'm going to use dplyr. 
+
+dt_ranges_genes <- as.data.table(ranges_genes[queryHits(ltr_with_120000)])
+
+dt_ranges_LTR <- as.data.table(LTR_intergenic[subjectHits(ltr_with_120000)])
+
+dt_ranges_LTR <- dt_ranges_LTR  %>%  rename(., start="start_ltr", end="end_ltr", strand="strand_ltr", seqnames="seqname_ltr", width="width_ltr")
+
+dt_merged <- cbind(dt_ranges_genes, dt_ranges_LTR)  
+
+dt_merged_filtered <- dt_merged %>% filter(start > start_ltr) 
+
+
+dt_merged_filtered
+
+```
+
+
+
+f) What’s the average distance from LTR inserted into intergenic region to the nearest gene (in any direction)? (1 point)
+
+```{r}
+
+
+nearest_distances <- distanceToNearest(LTR_intergenic, grange_1)
+
+mean_to_nearest <- mean(mcols(nearest_distances)$distance); mean_to_nearest
+
+
+```
+
+
+# Task 2. full length LINE1 elements (tidyverse + GenomicRanges)
+LINE1 are also retrotransposons, cousins of MT2 guys we analyzed in the assignment no. 2. Unlike MT2s, they don’t have LTRs, and also, unlike MT2s, they are capable of autonomous retrotransposition. In fact, with 868,000 insertions in the mouse genome LINE1 is the most successful mammalian autonomous retrotransposon. Most of the copies in mouse genome are inactive, however, there is a proof that some of the copies are still able to actively retrotranspose. As mentioned in assignment no. 2, retrotransposons pose a threat to genome integrity. Retrotransposition is usually not a huge problem for somatic cells, but represents a very dangerous event in the germline - cell population with a sole role of transmitting intact genetic information into progeny. As you would expect, various mechanism evolved to suppress retrotransposons in the germline, with PIWI-interacting RNA (piRNA) pathway being the key one. You can read more about piRNA pathway and how is suppressing retrotranspsons in mammalian oocytes in the paper:
+
+
+    Taborska, E., Pasulka, J., Malik, R., Horvat, F., Jenickova, I., Jelic Matosevic, Z., Svoboda, P. (2019) Restricted and non-essential redundancy of RNAi and piRNA pathways in mouse oocytes. bioRxiv 678177; doi: https://doi.org/10.1101/678177
+
+In order to figure out whether piRNAs target LINE1 elements, first we need to acquire LINE1 annotation in the genome. As you maybe figured out by now, retrotransposons and other repetitive regions in the genome are annotated by RepeatMasker program. Output from RepeatMasker for mouse mm10 genome is a table 5,147,737 rows long, out of which 905,177 are annotated as retrotransposon from LINE1 family. As we don?t your laptops catching fire during this assignment, table **http://hex.bioinfo.hr/~pstancl/rmsk.mm10.20180919.chr11.fa.out.csv** contains RepeatMasker output limited to chromosome 11.
+The goal of this exercise is to find all LINE1 insertions on chromosome 11 which can potentially still actively retrotranspose. You can use any package from IRanges, GenomicRanges, tidyverse and data.table as well as additional packages as stated in some of the tasks.
+```{r}
+line <- data.table::fread("http://hex.bioinfo.hr/~pstancl/rmsk.mm10.20180919.chr11.fa.out.csv");line
+
+lineg <- GRanges(line); lineg
+```
+
+a) In the RepeatMasker output table one LINE1 insertion event can be represented by one or more rows. This has to do with how RepeatMasker algorithm works, but also with the fact that during long evolutionary history a lot of LINE1s got interrupted by insertions from some other retrotransposons. Luckily for us, all the fragments of the same element have an unique identifier - column rmsk_id in the table. 
+Your first assignment is to get start, end and strand of each LINE1 insertion. In rare cases, one insertion can have annotated fragments on opposite strands. Since this is probably due to annotation error, remove those insertions.
+
+
+```{r}
+
+line_filt <- line %>% filter(repClass == "LINE" & repFamily == "L1") %>% group_by(rmsk_id) %>% filter(n_distinct(strand)==1); line_filt
+line_filtg <- GRanges(line_filt)
+
+line_filtg
+```
+
+b) If LINE1 gets interrupted by another retrotransposon insertion (including other LINE1s), we can assume that this insertion renders it incapable for retrotransposition. From LINE1 insertions you got in first assignment, remove all which got interrupted by another insertion. However, take in account that RepeatMasker also reports simple repeats and low complexity regions in the genome which (in our case) do not count as interruptions.
+
+
+```{r}
+
+#First, I subset the interrupted LINES from the filtered table and obtain the rmsk_id of the interrupted. 
+interrupted <- line_filt  %>%  group_by(rmsk_id) %>% filter(n() >1) 
+names_interrupted <- as.character(interrupted$rmsk_id)
+ginterrupted <- GRanges(interrupted)
+ginterrupted_list <- split(ginterrupted, ginterrupted$rmsk_id) 
+
+
+grlGaps<-function(grl) {
+ 
+   psetdiff(unlist(range(grl),use.names=FALSE),grl)
+}
+
+#I obtain the gaps between interrupted LINES for each rmsk_id with the same function I used to obtain introns in task1. 
+gaps_of_interrupted <- grlGaps(ginterrupted_list)
+gaps_unlist <- unlist(gaps_of_interrupted)
+
+
+#I obtain retrotransposons that are simple_repeat and low_complexity, and I subset the gaps of my gaps list that are interrupted by those exceptions. I obtain the id of those LINES, then I filter interruted lines, except for those kinds of interruptions. 
+exceptions <- lineg[lineg$repClass == "Simple_repeat" | lineg$repClass == "Low_complexity"]
+overlapping_with_exceptions <- subsetByOverlaps(gaps_unlist, exceptions, type="within")
+overlapping_with_exceptions_ids <- names(overlapping_with_exceptions)
+interruptions_to_remove_dt <- interrupted %>% filter(!rmsk_id %in% overlapping_with_exceptions_ids) 
+interruptions_to_remove <- interruptions_to_remove_dt$rmsk_id
+
+
+filtered <- line_filt %>% filter(!rmsk_id %in% interruptions_to_remove); filtered
+
+```
+
+c) LINE1 elements can also be inserted in another element. For each uninterrupted LINE1 element from previous task annotate whether it?s nested inside another annotated LINE1 element or it?s completely alone in vastness of genome. 
+
+
+```{r}
+
+
+
+not_interruptedg <- filtered  %>%  group_by(rmsk_id) %>% filter(n() == 1)
+
+not_interruptedg <- GRanges(not_interruptedg)
+nested <- subsetByOverlaps(not_interruptedg,  gaps_unlist, type="within"); nested
+names_nested<- nested$rmsk_id
+
+filtered <- filtered %>% mutate(nested_or_not = ifelse(rmsk_id %in% names_nested, "NESTED", "ALONE")); filtered
+
+
+
+
+```
+
+d) The L1 retrotransposition reaction produces mostly 5? truncated elements that are transpositionally inactive. Full length mouse LINE1 element should be around 6000 nt long. From your list of uninterrupted LINE1s, keep only those with length between 5500 and 6500 bases.
+
+
+```{r}
+filteredg <- GRanges(filtered)
+ 
+filtered_d <- filteredg[width(ranges(filteredg))>5500 & width(ranges(filteredg))<6500]; filteredg
+```
+
+e) As stated in the exercise intro, LINE1 are autonomous elements, which means that they encode the replicative machinery necessary for their retrotransposition in their sequence. 
+LINE1 sequence contains two non-overlapping open-reading frames (ORFs), both indispensable for L1 retrotransposition. ORF1 encodes a trimeric protein with RNA-binding properties and nucleic-acid chaperone activity. 
+ORF2 encodes an endonuclease that makes the first nick at the insertion site and a reverse-transcriptase that copies L1 RNA into DNA at the site of insertion. In order to be active, ORF1 should be at least 370 amino-acids long and ORF2 should be at least 1200 amino acids long. 
+Using function from package *Biostrings*, extract sequences of full-length LINE1 elements you got in the previous assignment from genomic sequenced stored in package **BSgenome.Mmusculus.UCSC.mm10.** Find two longest open-reading frames in those sequences. You may use a function from any existing package for this (or if you're inspired write your own function). From the list of LINE1 elements from previous task, remove all which don't have both ORFs of sufficient length.
+
+
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("BSgenome.Mmusculus.UCSC.mm10")
+
+```
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("ORFik")
+```
+
+```{r}
+library(BSgenome.Mmusculus.UCSC.mm10)
+library("Biostrings")
+library(ORFik)
+genome <- BSgenome.Mmusculus.UCSC.mm10
+
+chr11 <- genome$chr11
+
+seqs <- getSeq(genome, filtered_d)
+
+ORF1 <- findORFs(seqs, minimumLength = 370)
+ORF2 <- findORFs(seqs, minimumLength = 1200)
+
+names_1 <- names(ORF1)
+names_2 <- names(ORF2)
+
+two_orfs <- names_1[names_1 %in% names_2]
+
+```
+
+# Task 3. Analysis of genome assembly
+Preparation of DNA for sequencing is usually done by fragmenting the DNA and sequencing those fragments using Illumina technology. Later, different bioinformatics procedures and software are used to assemble a genome. One way of assessing and examining the quality of the genome is by mapping the obtained reads back to the assembled genome.
+
+The files can be found it **Task3 folder** because dirrect importing of the link with RDS object can break.
+
+**Part A) ** In this first part, you will analyze the mapped reads onto certain scaffolds (file **http://hex.bioinfo.hr/~pstancl/ScaffoldsA.RDS**). Note: All major calculations must be performed on the **GRanges objects**. Your tasks are:
+```{r}
+gr <- readRDS("~/algorithms-and-programming/Homework_8/Task3/ScaffoldsA.RDS")
+
+gr
+
+
+```
+
++  A1) Which scaffold has the largest uninterrupted area covered with reads and how long it is? The results must be in GRanges format.**(Note: Solve only as GRanges.)** (2 pts)
+
+```{r}
+splitted_scaffold <- split(gr, names(gr))
+
+lengths <-  reduce(splitted_scaffold)
+
+final <- unlist(lengths)
+
+ranges <- ranges(final)
+
+max <-ranges[width(ranges) ==max(width(ranges))]
+
+max
+
+
+```
+
+
+
++  A2) Make a function, **coverageChunk**, that will take as input GRanges object and size of the chunk, and calculate the total sum coverage for each chunk on each scaffold chunk. (For instance, if the size of the chunk is 300 bp then the scaffolds have to be diveded into non-overlapping chunks lenght 300 bp: 1-300,301-600...). The result can be a GRanges or data.table but it has to contain information which chunk on the scaffold has the calculated coverage.  <font color="red"> **Any direct solutions from the internet or even a slight modification of that solution will not be taken into account! You must implement function coverage()** </font> (Note: You may use some table operations if necessary.) (4 pts)
+
+```{r}
+
+
+coverageChunk <- function(gr, size) {
+  
+cov <- coverage(gr) #I obtain the coverage with coverage function, which returns a list of the coverage values per position in each scaffold, and the corresponding length of this value, which means the number of consecutive times this value appears in the scaffold. 
+
+
+vector <- lapply(cov, function(x) rep(runValue(x), runLength(x))) #In order to access the positions of the values to split the coverage in the chunks, we need to repeat each value the number of times its length indicates, and do this for the coverage of each scaffold.  
+
+chunk_cov <- lapply(vector, function(x) split(x, ceiling(seq_along(x)/size))) #We split the coverage values in chunks the size (which is one of the arguments of the function)
+
+sums_of_chunk_cov <- lapply(chunk_cov, function(x) {lapply(x, sum)}) #We sum the coverage per chunk to obtain the total covg of each chunk
+
+sums_cov <- as.vector(unlist(sums_of_chunk_cov)) 
+
+for_chunks <- lapply(vector, function(x) seq(1, length(x), by=1)) #For each element in the initial vector which contains the "vectorised" values of the coverage, we obtain a sequence in order to break this sequence into chunks of a given size
+
+chunks <- lapply(for_chunks, function(x) breakInChunks(length(x), chunksize=size)) #We break the sequence with the function breakInChunks .
+
+total_chunks_dt <-rbindlist(lapply(chunks, as.data.table), id = "seqnames") #We obtain a final datatable with all the chunks per scaffold, and the seqnames of the scaffolds
+ 
+result  <- cbind(total_chunks_dt, sums_cov) %>% filter(width ==size); result #We bind the total_chunks_dt with the sums of coverage per chunk, and elliminate the chunks that aren't of the size that we want. (I don't know if this last step is correct, maybe it would be better to include those chunks) 
+
+return(result)
+
+}
+
+coverageChunk(gr, 300)
+```
+
+
++  A3) Vizualize the coverage for each scaffold (regardless of the chunks) using **ggplot2** and its **geom_line()** (color and separate the plots by scaffolds). (Note: You may use some table operations if necessary.) (2 pts)
+
+
+
+```{r}
+
+covg<- coverage(gr)
+
+dt1 <- as.data.table(runValue(covg)) %>% group_by(group_name) %>% mutate(group=seq(1, n(), by=1)) %>% rename(., group="Position", value="coverage")
+
+plt <- ggplot(dt1, aes(x=Position, y=coverage, color=group_name)) + geom_line(show.legend=FALSE) + facet_wrap(~group_name)
+
+plt
+
+
+```
+
+
+**Part B)** 
+Description:
+In this part, you are going to analyze if some parts of the assembled genome are better or worse depending on the taxonomic classification. Here you are provided with the file **http://hex.bioinfo.hr/~pstancl/megan_coverage.RDS** that contains coverage for 500 bp regions (1-500, 501-1001...) for each scaffold (the calculation was already done for you the same way you had to solve the A part of this task). In the table **http://hex.bioinfo.hr/~pstancl/Tb_merged_diamond_with_taxonomy.RDS** you have DIAMOND results of your genome. Your task is to divide each scaffold in this table (Tb_merged_diamond_with_taxonomy.RDS) into 500 bp fragments (or chunks) and annotate each fragment on each scaffold based on the highest appearing genus in that fragment. *You do not need to make any additional criteria for the annotation of each fragment besides the most occurring genus.* After you have annotate your fragments/chunks, you will have to combine you results with the table **megan_coverage.RDS**. Afterwards, you are going to analyze if the coverage is higher or lower depending on your taxonomic classification.
+```{r}
+scaffolds <- readRDS("~/algorithms-and-programming/Homework_8/Task3/Tb_merged_diamond_with_taxonomy.RDS")
+
+sum_covg_window <- readRDS("~/algorithms-and-programming/Homework_8/Task3/megan_coverage.RDS") %>% rename(., scaffold="seqnames")
+
+
+
+```
+
+
+
+!["Figure 1. Visual representation of fragments/chunks(vertical red lines) from one scaffold with annotations from DIAMOND(colored lines represent one taxon)"](image.png)
+
++ B1) Make your annotated genus fragments/chunks of length 500 pb on each scaffold with correctly matched calculated coverage from **megan_coverage.RDS** to each annotated fragment in each scaffold. Your final result has to have only these columns: scaffold name, coverage value for 500 bp region, start and end for that region of 500 bp, original total scaffold length and your consensus_genus annotation for that fragment. The result can be either in GRanges or data.table. (5 pts)
+
+```{r}
+
+#First, I subset the ANNOTATED rows in the table scaffolds, and in the case of those rows in which start < end (antisense) I swap the columns, and finally obtain a data.frame which can be turned into GRanges object. 
+scaffolds_sense <- scaffolds[!(scaffolds$genus == ""), ] %>% rename(qstart="start", qend="end", qseqid="seqnames") %>% filter(start<end) 
+scaffolds_antisense <- scaffolds[!(scaffolds$genus == ""), ] %>% filter(qstart>qend) %>% rename(., qstart="end", qend="start", qseqid="seqnames")
+scaffolds_final <- rbind(scaffolds_sense, scaffolds_antisense) %>% arrange(seqnames)
+
+
+#I obtain the lengths for each scaffold to procede in a similar way as in task A1: I obtain a vector of lengths per scaffold, and break it into chunks of size 500, but this time I changed the length so that the last chunk also has size 500, because I thought it was more correct in order to include as many reads as possible. I obtain a similar data.frame to the one in task A1, with all the chunks for each scaffold. 
+df <- scaffolds_final %>% group_by(seqnames) %>% summarise(lengths=unique(qlen))
+qlength <-with(df, split(lengths, seqnames))
+chunks_b <- sapply(qlength, function(x) breakInChunks(x+x%%500, chunksize=500))
+chunks_dt_b<-rbindlist(lapply(chunks_b, as.data.table), id = "seqnames")
+
+
+
+#In the table of sums of coverage, there are some extra rows. In order to elliminate them, I added a column to the table chunks and to the table sum_covg_window which counts the number of chunks. As the correct number of chunks is the one in chunks_dt_b, I do a left_join by this column and seqnames, and I obtain ONLY the sum covg values that I want. So in the table merge, I already have the sum_covg per chunk and the chunks per scaffold.  
+chunks_dt_b <- chunks_dt_b %>% group_by(seqnames) %>% mutate(for_merge= seq(1, n(), 1))
+sum_covg_window <- sum_covg_window %>% group_by(seqnames) %>% mutate(for_merge= seq(1, n(), 1))
+merge <- left_join(chunks_dt_b , sum_covg_window, key=c("seqnames", "for_merge")) 
+
+
+#I transform this table and the original data.table of scaffolds into granges object in order to find the overlaps. 
+total_chunks_dt_b_for_overlaps <- merge
+gr_chunks <- GRanges(total_chunks_dt_b_for_overlaps)
+gr_scaffolds <- GRanges(scaffolds_final)
+
+#I find the overlaps between the chunks and the reads in scaffolds. 
+
+overlaps <-findOverlaps(gr_chunks, gr_scaffolds)
+dt_overlaps <- as.data.table(overlaps)
+
+
+
+#Finally, obtain the corresponding genus to each position in the findoverlaps object, in order find the most frequent genus per chunk in the query, which is the chunks_dt. I do this with dplyr grouping by query(chunk position) and genus, and I subset the most frequent genus/genuses per chunk. I will use this as a dictionary which associates chunk with most frequent genus/genuses. 
+genus <- gr_scaffolds[dt_overlaps$subjectHits]$genus
+dt_overlaps_genus <- dt_overlaps %>% mutate(genus=genus)
+dt_overlaps_dict <- dt_overlaps_genus %>% count(queryHits, genus, sort=TRUE) %>% group_by(queryHits) %>% summarize(most_genus = genus[n==max(n)]) 
+
+
+#I subset only the chunks that have reads in them, and add the most frequent genus/genuses and the length per_scaffold. 
+query <- unlist(dt_overlaps_dict$queryHits)
+lengths_scaffold <- unlist(scaffolds_final[query]$qlen)
+gr_final <-gr_chunks[query]
+gr_final$most_freq_genus <- unlist(dt_overlaps_dict$most_genus)
+gr_final$length_scaffold <- lengths_scaffold
+
+
+gr_final
+```
+
++  B2) Show the distribution of **physical_cov_sum** of your 50 highest occuring **consensus_genus** with boxplots. The **consensus_genus** have to be on y axis and ordered from the highest occuring consensus_genes to lowest and color the boxplots based on the phylum. What can you say about your results? (2) 
+
+
+
+```{r}
+final_dt <- as.data.table(gr_final)
+
+dict_phylums <- scaffolds_final[, c(18, 22)]
+dict_phylums <- dict_phylums %>% group_by(genus, phylum) %>% summarize()
+dict_phylums <- dict_phylums %>% rename(., genus = "most_freq_genus")
+
+summarized <- final_dt %>% count(most_freq_genus, sort=TRUE)  %>% summarise(most_freq_genus = most_freq_genus[1:50])
+with_phylums <- left_join(summarized, dict_phylums, by="most_freq_genus")
+final_dt_plot <- left_join(with_phylums, final_dt, by="most_freq_genus" )
+
+genus_ordered <- factor(final_dt_plot$most_freq_genus, level=c(unique(final_dt_plot$most_freq_genus)))
+
+plt <- final_dt_plot %>% ggplot(aes(x = physical_cov_sum, y = genus_ordered, fill=phylum)) + geom_boxplot()
+
+plt
+```
+
+
+
+# Task 4. Data mining
+
+In these tasks you will have to extract certain data and conduct some additional analysis. Package **biomaRt** will be your main tool in this task alongside GRanges, data.table (if you must, you may use dplyr) and others. You have to use the newest assembly and annotation version. Always print the final solution. 
+
+a) Get all human genes (their gene id and HGNC ) that are in any way connected to the Niemann-Pick disease. (1)
+
+```{r}
+ensembl <- useMart("ensembl", dataset="hsapiens_gene_ensembl")
+filter <- searchFilterOptions(mart = ensembl, filter = "phenotype_description", pattern = "Niemann-Pick")
+human_nieman<-getBM(c("hgnc_symbol", "ensembl_gene_id", "phenotype_description" ), filters=c("phenotype_description"), values=filter, mart=ensembl)
+
+human_nieman
+```
+
+
+
+b) For which disease(s) is responsible human gene that is located on chromosome 15 from 48408313 to 48645709 and what it the HGNC name of the gene? Do mouse (Mus musculus also known as mm10: regular mouse), cat and dog have this homolog and on which chromosome? (Use human dataset you have downloaded to extract information about these homologs. Make a new table out of it.) 
+
+Are the chromosomes between human and these animals the same?  (2)
+
+
+```{r}
+human<-getBM(c("hgnc_symbol", "ensembl_gene_id", "phenotype_description"), filters=c("chromosome_name", "start", "end"), values=list(15, 48408313, 48645709), mart=ensembl)
+
+homologs <- getBM(c("chromosome_name", "hgnc_symbol", "ensembl_gene_id", "phenotype_description"), filters=c("chromosome_name", "start", "end", "with_mmusculus_homolog", "with_fcatus_homolog", "with_clfamiliaris_homolog"),values=list(15, 48408313, 48645709, TRUE, TRUE, TRUE),  mart=ensembl)
+
+homologs
+```
+
+
+
+c) Unlike in the previous example, now you will have to download **one** dataset with cat and dog genes. You will have to select all genes (ensembl_gene_id for cat and HGNC for dog) located on cat chromosome 1 that are located on dog chromosome 15. Which function from the *biomaRt* package will help you to do this in one "simple" step? How many genes are shared between those chromosomes? (2)
+
+
+```{r}
+
+dog <-  useMart("ensembl", dataset="clfamiliaris_gene_ensembl")
+cat <- useMart("ensembl", dataset="fcatus_gene_ensembl")
+
+cat_and_dog <- getLDS(attributes="ensembl_gene_id", filters = "chromosome_name", values = "A1", mart=cat, attributesL="ensembl_gene_id",
+filtersL = "chromosome_name", valuesL = 15, martL=dog)
+
+
+shared <- cat_and_dog %>% filter(Gene.stable.ID == Gene.stable.ID.1 ); shared
+
+```
+
+d) How many areas on human chromosome 2 are overlapping at least 2 genes regardless of the strain? Take the genes that only have HGNC symbol and their start and end positions. (All the filtering must be done within function *getBM()* ) (3)
+
+
+```{r}
+
+
+human_hgnc<-getBM(c("start_position", "end_position", "chromosome_name", "strand", "hgnc_id"), filters=c("chromosome_name", "with_hgnc"), values= list(2, TRUE), mart=ensembl)
+
+human_hgnc <- human_hgnc %>% rename(., c("start_position" = "start", "end_position"="end")) %>% mutate(strand = ifelse(strand==1, "+", "-"))
+
+ranges <- GRanges(human_hgnc)
+
+overlaps <- ranges[countOverlaps(ranges, ranges, ignore.strand=TRUE) > 1] #I obtain the ranges of the chr2 in which  there is more than one gene, (in which two genes overlap)
+
+regions <- reduce(overlaps) #I reduce those regions 
+
+length(regions)
+
+
+```
+
+e) Count how many SNPs of certain clinical significance are present in the p53 gene region in human. Show column refsnp_id, allele and clinical significance. (2)
+
+
+```{r}
+
+snpmart = useMart(biomart = "ENSEMBL_MART_SNP", dataset="hsapiens_snp")
+
+tp53 = getBM(c("chromosome_name", "start_position", "end_position"), filters="hgnc_symbol", values="TP53", mart=ensembl); tp53
+
+SNPs <- getBM(c("refsnp_id", "allele", "clinical_significance"), filters = c("chr_name", "start", "end" ), values = list(17, 7661779, 7687538), mart=snpmart)
+
+
+SNPs_clinical <- SNPs[!(SNPs$clinical_significance == ""), ]; SNPs_clinical
+
+```
+
+
+
+f) How many TATA box motif can you find 2000 bp upstream of protein-coding genes from human chromosome 6? (2)
+
+
+```{r}
+
+genes <- getBM("ensembl_gene_id", filters=c("chromosome_name","biotype"), values=list(6, "protein_coding"), mart=ensembl)
+
+ensembl <- as.character(as.vector(unlist(genes)))
+
+upstream <- getSequence(id=ensembl, type="ensembl_gene_id", seqType = "coding_gene_flank", upstream = 2000, mart = ensembl); upstream
+
+
+number <- upstream %>% mutate(number_of_tata = str_count(coding_gene_flank, pattern = "TATAAA")) %>% summarize(sum(number_of_tata)); number
+
+```
+
+
+g) What are the accession numbers of miRNA are located within mouse genes with go term GO:0032502 in antisense direction? Try different type of searches for miRNA (different databases) and comment on these methods. (3)
+
+EXPLANATION: First I have to obtain the miRNA from the ENSEMBL_MART_FUNCGEN mart, then I filter in the ensembl mart the genes that we are looking for. Then, I find a way to filter the antisense position of those genes in the miRNA mart, in order to retrieve the accession number of the corresponding miRNA. I found that the ensembl mart and the funcgen mart don't have any attributes and filters in common, so I had to do a transformation. I had to obtain the position (chromosome, start, end, and sense) of the genes in the ensembl dataset, and transform it into a format which I can use as a filter in the other mart, which is the chromosomal region. In addition, taking into account that we are looking for the miRNA in the antisense position, I wrote -strand to obtain the antisense. Then I filter in the funcgen mart with those chromosomal regions, and obtain the accession numbers. 
+
+```{r}
+
+
+mouse_1 <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
+mirna =  useMart("ENSEMBL_MART_FUNCGEN", dataset = "mmusculus_mirna_target_feature")
+genes<-getBM(c("ensembl_gene_id", "chromosome_name", "strand", "start_position", "end_position"), filters=c("go"), values=list("GO:0032502"), mart=mouse_1); genes
+genes_regions <- genes %>% mutate(chromosomal_region=paste(chromosome_name, start_position, end_position, -strand, sep=":"))
+ 
+mi_rnas <- mirna_accession <- getBM(c("accession", "chromosome_name", "chromosome_strand", "gene_stable_id"), filters=c("chromosome_name", "chromosomal_region"), values=list(genes$chromosome_name, genes_regions$chromosomal_region), mart=mirna); mi_rnas
+
+
+```
