@@ -3,6 +3,9 @@ title: "homework6"
 output: html_document
 ---
 
+# 76,7% (23/30)
+
+
 ```{r}
 library(data.table)
 library(ggplot2)
@@ -20,7 +23,7 @@ p
 
 
 ```
-
+<span style="color:red"> 3/5 pts  Different theme is shown in the original plot. You should have selected theme_light or theme_bw() or any other that is more similar to the original image. Jitter does create random position for dots on both axis, but on the original image they are more condensed. Examine what argumen *width* in geom_jitter does. Axis x text is not in proper orientation. </span>
 
 
 ```{r}
@@ -28,6 +31,7 @@ df <- read.delim("http://hex.bioinfo.hr/~mfabijanic/df.txt", header=T)
 
 rec <- c("Strongly no", "No", "Maybe")
 values <- c(0, 0, 0)
+#values <- c(NA, NA, NA) # One way of fixing the outline problem but need to change the colors in plot.
 
 df_values <- df %>% group_by(recommend) %>% summarize(value = n()) %>% add_row(., recommend=rec, value=values)
 
@@ -36,6 +40,9 @@ vect_order <- c("Strongly no", "No", "Maybe", "Yes", "Strongly yes")
 p <-ggplot(data=df_values, aes(x=factor(recommend, level=vect_order), y=value, fill=recommend))+geom_bar(stat = "identity", color="black", show.legend=FALSE)+ scale_fill_manual(values=c( "#ffffbf", "#a6d96a",  "#1a9641", "#1a9641", "#a6d96a"))+labs(x="Will you recommend #NGS school to your friends and colleagues?", y="Number of people")
 p
 ```
+<span style="color:red"> 3.5/5 pts The black outline should not be visible on categories that are missing. Your choice of inserting 0 in them is not correct. They should have been missing or NA in your table but still defined as a levels. Then you had to just make appropriate correction for the coloring. Again, the background has not been changed. </span>
+
+
 Create any plot you want from the data. Make some comparisons for different groups (use facets). Make some meaningful conclusion from it.
 ```{r}
 
@@ -46,18 +53,21 @@ compare
 ```
 Generally, the participants with a background of more dry lab (computational background) give greater grades than the ones with a background of more wet lab. Independently of the background, we can see that generally the participants that grade lecturers worse are the ones that are PhD and PostDoc, and we also can appreciate a gender component, as female participants grade lecturers better than male participants. The worst grades are generally given by male participants. 
 
+<span style="color:red"> 1/5 pts  Inappropriate graph for your conclusion. You are plotting nominal and ordinal variable. Plots with dots are used in order to establish some linear or another connection usually when analyzing two continuous variables. You can not conclude anything from these. You had to show count or proportions to make such conclusions. You number of samples are also different between categories so it always best to calculate proportion of females and males by dry or wet lab per each position and then do some meaningful comparison. </span>
+
+
 ```{r}
 ggplot(df_values, aes(x = "", y = value, fill = recommend)) +
   geom_col() +
   coord_polar(theta = "y")+theme_void()
 ```
-
+<span style="color:red"> Extra 1.5/2 Missing labels inside pie chart </span>
 
 
 ```{r}
 library(data.table)
-rm_table <- fread("RepeatMaskerMousechr12.txt")
-translator <- read.csv("filtering.csv", header=F)
+rm_table <- fread("../original_HW6/RepeatMaskerMousechr12.txt")
+translator <- read.csv("../original_HW6/filtering.csv", header=F)
 
 rm_table
 
@@ -75,6 +85,10 @@ tidy
 
 translator
 ```
+<span style="color:green"> 2/2 pts. </span>
+
+
+
 ```{r}
 
 count_df <- tidy %>% mutate(Length = genoEnd-genoStart)  
@@ -87,6 +101,7 @@ plot
 
 ```
 
+<span style="color:green"> 1/1 pts. </span>
 
 
 
@@ -101,6 +116,8 @@ plot_split
 
 ```
 
+<span style="color:green"> 1/1 pts. </span>
+
 
 D. 2 points Visualise lengths for Classes in filtering.csv separately, with density graphs showing for each RepName belonging to a class. Use transparency 0.5.
 ```{r}
@@ -108,6 +125,9 @@ tidy_2 <- inner_join(translator_dt, rm_table, by="repName") %>% select(-c(V3, V4
 plot_class = ggplot(tidy_2, aes(x = Length, fill=repName)) + geom_density(alpha=0.5) +facet_wrap(~V1)
 plot_class
 ```
+<span style="color:green"> 2/2 pts. </span>
+
+
 D. Show the class and RepName and both histograms and density plot (make only the line visible from density plot)
 ```{r}
 tidy_2 <- inner_join(translator_dt, rm_table, by="repName") %>% select(-c(V3, V4)) %>% mutate(Length = genoEnd-genoStart)
@@ -115,7 +135,19 @@ tidy_2 <- inner_join(translator_dt, rm_table, by="repName") %>% select(-c(V3, V4
 hist <- ggplot(tidy_2, aes(x=Length, fill=repName)) + geom_histogram(aes(y=..density..))+facet_wrap(~V1 + repName)
 hist <- hist+geom_density(); hist
 
+
+ggplot(tidy_2, aes(x = Length)) + 
+  geom_histogram(aes(y = ..density.., color = repName, fill = repName)) +  
+  geom_density() + 
+  facet_wrap(~V1 + repName)
+
+ggplot(var2a, aes(x = Length)) + geom_histogram(aes(y = ..density.., fill = RepName)) + geom_density() + facet_wrap(~Class + RepName)
 ```
+<span style="color:red"> 2/3 pts. You colored the density plot but it shold have been empty. See the image and the correct syntax: ggplot(tidy_2, aes(x = Length)) + 
+  geom_histogram(aes(y = ..density.., color = repName, fill = repName)) +  
+  geom_density() + 
+  facet_wrap(~V1 + repName) </span>
+
 
 ```{r}
 
@@ -132,6 +164,8 @@ plot_filtered
 
 
 ```
+<span style="color:green"> 4/4 pts. </span>
+
 
 E. Visualise percentage of each class lost in filtering:
 
@@ -145,3 +179,4 @@ plot_fractions
 
 ```
 
+<span style="color:green"> 2/2 pts. </span>
