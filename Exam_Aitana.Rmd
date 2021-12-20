@@ -1,0 +1,590 @@
+---
+title: Exam Aitana Egea
+output: html_document
+---
+
+
+# 77 % (38.55/50)
+
+EXERCISE 1. 
+
+
+```{r cars}
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(data.table)
+library(magrittr)
+library(stringr)
+library(IRanges)
+library(Biostrings)
+library(GenomicRanges)
+library(biomaRt)
+library(ggplot2)
+
+```
+Your goal is to simulate the final reads you get in the experiment when you sequence the starting DNA with 20x coverage. The sequencing technology that you are using creates reads of 100bp +/- 6bp length (avg +/- sd, normally distributed). Any given base that you read has 0.3% chance of being read incorrectly. Reads are being made starting from random positions within the genome. Base coverage is defined as how many times a given position (base) in your starting sequence is present in the reads, on average. 
+
+```{r cars}
+dna_seq <- readDNAStringSet("ftp://ftp.sanger.ac.uk/pub/project/pathogens/sa/MRSA252.dna") 
+
+seq <- dna_seq[[1]][1:35000]
+
+
+my.kmer.coverage <- function(dna, kmers, cov) {
+
+     
+    length_genome <- nchar(dna) # get the genome length
+    read_start <- sample(length_genome-107, (length_genome/100)*cov, replace = T) # select read start position randomly
+      ### length_genome-107 DOESN'T guarantee anything - reads with length mean=100 & sd=6 can be longer than that!!! And if that happens your function fails with an error.
+    read_lengths <-  round(rnorm((length_genome%/%100)*cov, 100, 6)) #create the lengths following the indicated instructions
+    
+#Extract the reads from the sequence
+    irextract <- IRanges(start = read_start, width = read_lengths)
+    reads <- extractAt(dna, irextract)
+    
+#INTRODUCING THE RANDOM ERRORS: Introduce the errors randomly (at random positions). I also created a vector of random bases
+#However, if I just replace them at the random starting positions, there's a chance that the 
+#existing base is the same as the new one, and this would diminish the error rate considerably. 
+#Therefore, I had to modify the vector of new letters, comparing each letter with the "Old" letters
+#at each random position. I modified the ones that are equal, and then replaced the letters at random 
+#positions. 
+    
+    
+    perfect_reads <- unlist(reads)
+    
+    err_pos <- sample(nchar(perfect_reads),nchar(perfect_reads)*(0.3/100), replace=TRUE)   ### By leaving replace=TRUE here you're allowing for an individual base to change twice, which would "count" in the 0.3% but still result in just one error. With number as low as 0.003, it will not have a significant effect (if it has one at all), but it is an important conceptual error.
+    
+    letter_sample <- DNAString( paste(sample(c('A', 'C', 'G', 'T'), length(err_pos),  replace=TRUE), collapse=""))
+    
+    correct_letters <- perfect_reads[err_pos]
+    
+    cmp <- compareStrings(letter_sample, correct_letters)   ### nice usage of compareString()
+    
+    positions_A <- unlist(str_locate_all(cmp, "A"))
+    
+    positions_TGC <- unlist(str_locate_all(cmp, "[TCG]"))
+    
+    new <- letter_sample
+    
+    new[positions_A] <- "G"
+    
+    new[positions_TGC] <- "A"   ### Hm, okay, this is a bit "hacky" because you're introducing a slight bias toward A. But by cutting this corner, which is arguably not that crucial in our case, you've made the code a lot faster by avoiding ifs or looping. So ok.
+    
+    
+    perfect_reads_mismatch <- replaceLetterAt(perfect_reads, err_pos, new)
+    
+    eFrags <- DNAStringSet(perfect_reads_mismatch, 
+        start=c(1, (cumsum(width(reads))+1)[-length(reads)]), 
+        width=width(reads))
+
+
+#OBTAINING THE K-MERS: I unlisted the reads with errors, and created an Iranges
+#that contains the ranges of each read. Then I created a Granges object with identifier
+#for each read, that creates a sliding window by identifier. I unlisted the windows, and then
+#extracted the sequences from the inlisted fragments. 
+
+    ### Smart solution! I like how you utilised slidingWindows in conjunction with "faking" seqnames by unique read name. Very creative and very efficient, nicely done!
+    
+   unlisted <- unlist(eFrags)   ### this is the same as perfect_reads_mismatch...
+   reads_width <- width(eFrags)   ### ...and these are width(reads). You changed perfect_reads_mismatch into eFrags nicely, and then back to 1-string object, but the whole conversion is circular and it wasn't necessary.
+   ranges <- successiveIRanges(reads_width, gapwidth=0, from=1)
+   dt <- as.data.table(ranges)
+   dt <- dt %>% mutate(seqnames = row_number())
+   gr <- GRanges(dt)
+   windows = slidingWindows(gr, width=kmers, step=1)
+   unlist_windows <- unlist(windows)
+  at <- ranges(unlist_windows)
+   
+  k_mers <- extractAt(unlisted, at)
+
+  #OBTAINING THE PLOT: I grouped by sequence, and then grouped by the obtained value and summed to obtain
+  #the frequency. 
+  k_mers_dt <- as.data.table(k_mers) 
+
+  names(k_mers_dt) <- "sequence"
+
+  k_mers_dt_count <- k_mers_dt %>% group_by(sequence) %>% summarize(value=n()); k_mers_dt_count
+
+  k_mers_dt_count_plt <- k_mers_dt_count %>% group_by(value) %>% summarize(number_of_kmers_per_value = n())
+
+
+  plt <- k_mers_dt_count_plt %>% ggplot(aes(x=value, y=number_of_kmers_per_value, fill=value))+geom_col()
+  
+  list <- list(kmers= k_mers, error_fragments= eFrags, reads_without_error=reads, plot=plt)
+  return(list)
+  
+}
+
+result <- my.kmer.coverage(seq, 20, 20)
+
+```
+*This is brilliant. You're the only one who managed to do this part without a single loop or apply, by finding and using exactly the functions which are designed to handle genomic ranges. You will lose 0.25 due to replace=T in line 53 and also -107 thing in line 35, but I am impressed with the code. Runs fast and is nice, simple and readable. Bravo!!*
+*11/11.5 out of ordinary points available for Pt1&2, but an extra 0.5 because this is decidedly the best coded first task in this generation. Nice job!*
+
+
+Can you distinguish between kmers that have an error and error-free kmers? If you had a diploid organism, could you distinguish between kmers with SNPs (bases that differ in homologuous chromosomes) and errors? Explain how you would do this and show on an example (get 2 DNA strings as input instead of one, and make them differ in 5% of sites to represent SNPs).  Could you distinguish between kmers with SNPs (bases that differ in homologuous chromosomes) and errors? Explain how you would do this and show on an example (get 2 DNA strings as input instead of one, and make them differ in 5% of sites to represent SNPs).
+
+
+
+As we can see in the plot, the K-mers with error are at the beginning because they are much less frequent than error free K-mers. That would be a easy way to distinguish between error/error-free K-mers when assesing the quality of the sequencing. In fact, most of the sequencing error correction tools implement the k-mer counting methods. In k-mer counting methods, low-depth k-mers are assumed to be erroneous. The k-mers resulting from heterozygosity should be more carefully managed because these k-mers are similar to the erroneous k-mers
+
+
+```{r pressure, echo=FALSE}
+
+
+#Introducing 5% difference representing the SNPs in order to create a new sequence. 
+    seq1 <- seq
+   
+    snp_pos <- sample(nchar(seq1),nchar(seq1)*0.05, replace=TRUE)
+    
+    letter_snp <- DNAString( paste(sample(c('A', 'C', 'G', 'T'), length(snp_pos),  replace=TRUE), collapse=""))
+    
+    snp_letters <- seq1[snp_pos]
+    
+    cmp <- compareStrings(letter_snp, snp_letters)
+    
+    positions_A <- unlist(str_locate_all(cmp, "A"))
+    
+    positions_TGC <- unlist(str_locate_all(cmp, "[TCG]"))
+    
+    new_let <- letter_snp
+    
+    new_let[positions_A] <- "G"
+    
+    new_let[positions_TGC] <- "A"
+    
+     seq2 <- replaceLetterAt(seq1, snp_pos, new_let)
+  
+    
+    
+    
+``` 
+    
+In order to simulate a sequencing experiment with a diploid DNA, I inputed the seq2 (which represents the other dosis of DNA) and calculated the kmers. It is a common problem when asessing the quality of the sequencing process to distinguish between error k-mers and SNP. In this graph, I joined all the kmers together to simulate the reads we could obtain when sequencing the DNA of a heterozygous organism. As we can see, it is really easy to distinguish the error k-mers, (like in the other graph), because they appear in a exponentially decreasing curve. We can also see that the curve of the k-mer density plot follows a normal distribution ideally, and the humps that are not in this peak represent different k-mers. However I find this graph a little bit confusing, as kmers corresponding to SNPs should appear represented as a hump at the left of the main peak, as they are less common. However, the question was if it would be possible to distinguish between the peaks belonging to SNPs and error k-mers, and the answer is that it would be easy to distinguish it graphically, because the slope of the error k-mers is quite characteristic, and the humps that represent SNPs appear more to the right in the x-axis. This difference between error k-mers and SNP k-mers is due to the fact that error k-mers are not present in all the reads, while SNP k-mers are. It is worthy to note however, that there is a problem with this method of k-mer counting becausue there are less frequent k-mers that are treated as error k-mers, and vice-versa (error k-mers can be treated as error free, if they're very frequent. )
+
+*Excellent explanation! This particular graph is a bit confusing because what looks like a main hump is actually the SNPs. This happens because we're introducing a ridiculously high % of heterozigosity (5% is super-high) on a very short sequence for demonstration purposes. In real life, you'd have a lot lower % of SNPs, and a lot longer sequence, and then the graph would look like you're describing in your explanation. Very nice, 3/3 for Pt3*
+
+```{r}
+
+ 
+  result2 <- my.kmer.coverage(seq2, 20, 20)
+
+  k_mers2 <- result2[[1]]
+  k_mers1 <- result[[1]]
+      
+  # k_dt1 <- as.data.table(kmers1)  ### ERROR - variable doesn't exist. I see which one it was supposed to be, but this is exactly why you need to run the whole code in a clean environment before submitting the final version!! I corrected it so I could run the rest.
+  k_dt1 <- as.data.table(k_mers1)
+  names(k_dt1) <- "sequence"
+  # k_dt2 <- as.data.table(kmers2) 
+  k_dt2 <- as.data.table(k_mers2) 
+  names(k_dt2) <- "sequence"
+  
+  
+  kmers_sequenced <- rbind(k_dt1, k_dt2)
+  k_count <- kmers_sequenced %>% group_by(sequence) %>% summarize(value=n())
+  plt <- k_count %>% ggplot()+ geom_density(aes(x=value, color="blue"), show.legend = F)+labs(x="kmer depth", y="Frequency")+ggtitle("K-mer density plot"); plt
+  
+  
+      
+      
+```
+    
+
+ 
+    
+    ```{r}
+    
+    if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("seqLogo")
+    
+    ```
+    Install the seqLogo package with BiocManager::install("seqLogo"). Find all the reads which contain the sequence "ATCGTCGAGTC" allowing for maximum 5 mismatches, no indels. Make the position weight matrix (Biostrings package function) and plot the logo for all those matches (seqLogo package). Make the logo for all those matches which have 5 mismatches, 4 mismatches, 3 mismatches, 2 mismatches or 1 mismatch. 
+    
+    ```{r pressure, echo=FALSE}  
+    
+library(seqLogo)
+    
+rd <- result[[2]]
+rds_unlist <- unlist(rd)
+ranges_with_pattern <- matchPattern("ATCGTCGAGTC", rds_unlist, max.mismatch=5, with.indels=FALSE)
+patterns_list <- extractAt(rds_unlist, ranges_with_pattern)
+wm <- consensusMatrix(patterns_list, as.prob = TRUE)[1:4, ]
+pwm <- makePWM(wm, alphabet = "DNA")
+plt_logo <- plot(pwm); plt_logo
+
+
+ranges_with_pattern4 <- matchPattern("ATCGTCGAGTC", rds_unlist, max.mismatch=4, with.indels=FALSE)
+
+patterns_list4 <- extractAt(rds_unlist, ranges_with_pattern4)
+wm4 <- consensusMatrix(patterns_list, as.prob = TRUE)[1:4, ]
+pwm4 <- makePWM(wm4, alphabet = "DNA")
+plt_logo4 <- plot(pwm4); plt_logo4
+
+ranges_with_pattern3 <- matchPattern("ATCGTCGAGTC", rds_unlist, max.mismatch=3, with.indels=FALSE) 
+
+patterns_list3 <- extractAt(rds_unlist, ranges_with_pattern3)
+wm3 <- consensusMatrix(patterns_list3, as.prob = TRUE)[1:4, ]
+pwm3 <- makePWM(wm3, alphabet = "DNA")
+plt_logo3 <- plot(pwm3); plt_logo3
+
+
+ranges_with_pattern2 <- matchPattern("ATCGTCGAGTC", rds_unlist, max.mismatch=2, with.indels=FALSE)
+
+patterns_list2 <- extractAt(rds_unlist, ranges_with_pattern2)
+wm2 <- consensusMatrix(patterns_list2, as.prob = TRUE)[1:4, ]
+pwm2 <- makePWM(wm2, alphabet = "DNA")
+plt_logo2 <- plot(pwm2); plt_logo2
+
+
+#When we restrict the mismatches to 1, we can see that there are no matching patterns. 
+
+ranges_with_pattern1 <- matchPattern("ATCGTCGAGTC", rds_unlist, max.mismatch=1, with.indels=FALSE)
+
+patterns_list1 <- extractAt(rds_unlist, ranges_with_pattern1) 
+
+
+``` 
+*I have nothing to add here :) perfect Pt4, 3/3*
+
+
+# Taks 2.
+2. Create a function that does heuristic k-means clustering (name it My.k.means) and plots the final result (final Voronoi regions should be visible). It should also return positions of the centroids and indication which input point belongs to which centroid. You need to do multiple runs in order to find the consensus centroid position. If points are defined in a space with more than 2 dimensions you do not need to do the plotting. Of course, you are not allowed to use any R function which deals with k-means clustering, from any package. The created function must work on any table or matrix. 
+
+    
+```{r pressure, echo=FALSE} 
+n <- 4
+K <- 2
+d <- 2
+x <- matrix(sample(100, n * d), ncol = n)
+x
+
+
+```
+In the context of k-means, we want to partition the space of our observations into k classes. Each observation belongs to the cluster with the nearest mean. Here “nearest” means the one with the lowest Euclidean distance.  What I concluded after my research, is that voronoi diagram divides a space is divided into cells so that each cell contain exactly one site for every point in cell. The Euclidean distance of the point to the site within the cell must be smaller than the distance of that point to may other site in the plane. Therefore, I concluded that in order to represent vonoroi cells in my plot, I need to assign every point of the area I'm representing to a cluster (using my k.means function (nearest point) and represent them by group.
+
+
+
+```{r}
+my.k.means <- function(matrix, n_k, n_p) {
+  
+#My function takes 4 inputs: my matrix of data, the centers (they should be of the same dimensions as the matrix, and the number of centroids is K). The organisation of the data is as follows: the x and y are in the columns, so if the matrix has 2 rows and 50 columns, it means that the points are in 2D and the number of points are 50. The centers should have the same dimensions as the matrix. 
+  
+  cent <- matrix[,sample(ncol(matrix),n_k)]
+  result <- matrix(0,nrow(matrix),n_k)
+  result2 <- cent
+ 
+  
+#First, I used this loop that calculates the distance of each element of the cluster to the elements in the matrix of points (Euclidean formula)
+while(isTRUE(all.equal(result2,result)) == FALSE) {
+  dists <- apply(cent, 2, function(center) {
+       colSums((matrix - center)^2)
+})
+dists <- sqrt(dists)
+#Then, I named my table of distances : each column represents the distances of each point to one of the clusters. 
+n_centers <- ncol(cent)
+names_cols <- lapply(seq(1:n_centers), function(i) paste("cluster_",i, sep="" )) # R is vectorized this is not how you use paste! This is correct: paste("cluster_",1:n_centers, sep="" )
+euclidean_distances <- dists
+colnames(euclidean_distances) <- names_cols
+#Each row represents one point, and they're ordered, so that means that if we retrieve the lowest, we have a way to identify
+#which is the closest cluster for each of the points. 
+lowest <- colnames(euclidean_distances)[apply(euclidean_distances,1,which.min)]
+points_id <- seq(1:ncol(matrix))
+corresponding_cluster <- as.data.table(cbind(points_id, lowest))
+#Now, we have a list of clusters and the id of the corresponding points, and we can use the position
+#to subset in the original matrix and retrieve the points. We do the rowwise means, to do the means
+#of the x coordinates and the y coordinates of each point in the cluster. 
+points_by_cluster <- split(corresponding_cluster$points_id,corresponding_cluster$lowest)
+cluster_list <- lapply(points_by_cluster, function(cluster) { lapply(cluster, function(pos) matrix[, as.numeric(pos)])})
+cluster_list_df <- lapply(cluster_list, function(x) as.data.table(x))
+clusters_new_centroids <- lapply(cluster_list_df, function(x) rowMeans(x))
+#We now have the new clusters and put them in the right format. 
+cols <- lapply(clusters_new_centroids, function(x) as.data.table(x))
+centroids <- as.matrix(do.call(cbind, cols))
+result <- result2
+result2 <- centroids
+}
+  
+final <- list(corresponding_cluster, cluster_list, centroids)
+return(final)
+}
+result <- my.k.means(x, K, n)
+```
+<span style="color:red"> Your inputs are wrong. The tables are often in a long format. You were given an example of iris data. (However, you did not lose points on this). In determining centroids you have only missed to repeat the whole process some number of time and take the mean/median of the clusters to get the consensus centroids. </span>
+
+
+
+
+```{r pressure, echo=FALSE} 
+############
+n <- 4
+K <- 2
+d <- 2
+###
+bla <- copy(iris[,1:2])
+names(bla) <- NULL
+
+result <- my.k.means(bla %>% as.matrix() %>% t, 3, 4)
+```
+
+
+I didn't know whether to put the plot and the while inside of the function, but finally I decided not to do it because my objective is that my function calculates new centroids for a matrix of points in every dimension, and the plot should just be done for a matrix of points of two dimensions, so I think the function makes more sense the way I divided it. With the purpose of running it several times until the consensus centroids are calculated, I implement a while loop outside the function, that returns the final centroids as "centers" and the corresponding final cluster as "corresponding_final"
+
+
+```{r pressure, echo=FALSE}
+
+x <-  bla %>% as.matrix() %>% t
+
+dt <- bla %>% as.matrix()
+centroids_dt <- t(result[[3]])
+
+dt<- as.data.table(dt)
+centroids_dt <- as.data.table(centroids_dt)
+
+colnames(dt) <- c("x_axis", "y_axis")
+colnames(centroids_dt) <- c("x_axis", "y_axis")
+
+grouped_data <- cbind(dt, result[[1]] ) #%>% dplyr::rename(lowest="Cluster")#cbind(dt, corresponding_final[,2]) %>% dplyr::rename(lowest="Cluster") ## There isn't a table corresponding_final
+## Please stop using rename because of the colission with other packages and so on it always produces errors.
+setnames(grouped_data, "lowest", "Cluster")
+
+
+plt1 <- ggplot() + geom_point(data=grouped_data, aes(x=x_axis, y=y_axis, color=Cluster), size=5)+geom_point(data=centroids_dt, aes(x=x_axis, y=y_axis), shape=23, fill="blue", color="darkred", size=7)
+
+plt1
+
+#Another plot for vonoroi, because I think it is clearer to see both plots. 
+    
+x_coord <- x[1,]; x_coord
+y_coord <- x[2,]; y_coord
+
+
+max_coordx <- max(x_coord); max_coordx
+
+max_coordy <- max(y_coord)
+x_points <- seq(1:max_coordx)
+
+y_points <- seq(1:max_coordy)
+
+assign_cluster <- function(matrix, cent, n_p) {
+dists <- apply(cent, 2, function(center) {
+       colSums((matrix - center)^2)
+})
+dists <- sqrt(dists)
+n_centers <- ncol(cent)
+names_cols <- lapply(seq(1:n_centers), function(i) paste("cluster_",i, sep="" ))
+euclidean_distances <- dists
+colnames(euclidean_distances) <- names_cols
+lowest <- colnames(euclidean_distances)[apply(euclidean_distances,1,which.min)]
+points_id <- seq(1:n_p)
+corresponding_cluster <- as.data.table(cbind(points_id, lowest))
+final <- corresponding_cluster
+return(final)
+}
+
+grid <- expand.grid(x_points, y_points)
+colnames(grid) <- c("x_axis", "y_axis")
+
+grid_for_cluster <- t(grid)
+
+cluster_grid <- assign_cluster(grid_for_cluster, result[[3]], ncol(grid_for_cluster))
+
+
+
+dt_plot <- cbind(grid, cluster_grid)
+
+plt_voronoi <-ggplot() + geom_point(data=dt_plot, aes(x=x_axis, y=y_axis, color=lowest, alpha = 0.2))+labs(color="Voronoi regions")+ geom_point(data=centroids_dt, aes(x=x_axis, y=y_axis), shape=23, fill="blue", color="darkred", size=7)+scale_alpha(guide = 'none')+geom_point(data=grouped_data, aes(x=x_axis, y=y_axis, color=Cluster), size=5)
+
+  
+plt_voronoi  
+  
+
+```
+
+
+<span style="color:red"> 12/15 Your concept of plotting Voronoi regions is correct, you only had to make more dots to show them nicer on the plot and color them a different color than this. You did not completely solve the task of creating a function that returns this plot and input format is quite messy. </span>
+
+
+
+
+## Exercise 3 easy version: FASTQ analysis  
+#### 10 points  
+  
+You can find 1000 sequences in fastq format in this link https://d28rh4a8wq0iu5.cloudfront.net/ads1/data/ERR037900_1.first1000.fastq.  
+If you have any doubts about this exercise, you should have a look at FASTQC - this is a program commonly used to assess the quality of next generation sequencing experiments, similar to what you will be doing in this exercise. You can find the explanations of the graphs it produces here:  https://www.bioinformatics.babraham.ac.uk/projects/fastqc/Help/3%20Analysis%20Modules/  
+   
+#### Part 1:  
+   
+(1) Explain how the fastq file is organised and what information does it hold. (Yes, google. But please explain in your own words. What are the different lines? How many lines per sequence?)  
+
+FASTQ format is a text-based format containing the information of a sequence (usually nucleotide) and its corresponding quality scores obtained by sequencing. It contains the sequence of the reads obtained by sequencing. 
+
+A FASTQ file usually uses four lines per sequence.
+
+First line begins with a  '@' character and is followed by a sequence identifier and an optional description (like a FASTA title line). 
+
+The second line is the raw sequence letters.
+
+Line 3 begins with a '+' character and is optionally followed by the same sequence identifier (and any description) again (not in this case). 
+
+Line 4 represents the quality values for the sequence in Line 2, and must contain the same number of symbols as letters in the sequence. In order to understand the format correctly, we have to know that the quality value Q is an integer mapping of p (i.e., the probability that the corresponding base call is incorrect). 
+  
+
+The quality values in increasing order of quality are :  !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~
+
+<span style="color:green"> 1/1 </span>
+
+#### Part 2:  
+  
+(1) What is Phred quality score? Write the function that will extract quality scores for reads in numeric values (Sanger Phred+33). Plot the mean PER BASE (for every position) quality for reads. (Yes, google. But write your own code that will extract quality scores and plot the mean.)  
+
+A Phred quality score is a measure of the quality of the sequencing for each base. Phred quality scores Q are logarithmically related to the base-calling error probabilities P. So, for example if Phred is 20, the probability of a base being called wrong is 1 in 100, and the base call accuracy (the probability of the base being called correctly) is 99%. The formula that connects Q and P (probability of error base call) is: 
+
+
+$$
+Q =  -10log{P}
+$$
+```{r pressure, echo=FALSE}
+
+Qscores <- function(stringq) {
+    stringq <- as.character(stringq)
+    number <- as.vector(sapply(stringq, function(char) as.numeric(charToRaw(char))-33))
+    dt <- as.data.table(number)
+    dt <- as.data.table(t(dt))
+}
+
+
+fastq <- fread("https://d28rh4a8wq0iu5.cloudfront.net/ads1/data/ERR037900_1.first1000.fastq", header=FALSE)
+
+
+fastq_score <-fastq[seq(4, nrow(fastq), 4), ]
+fastq_ids <-fastq[seq(1, nrow(fastq), 4), ]
+  
+  
+qscore_ids <- cbind( fastq_ids ,fastq_score)
+colnames(qscore_ids) <- c("id", "qscore")
+
+
+matrix <-rbindlist(lapply(qscore_ids$qscore, function(line) Qscores(line)))
+
+matrix_mean <- as.data.table(colMeans(matrix)) %>% mutate(pos = 1:100) #%>% dplyr::rename(V1="mean_score"); matrix_mean
+setnames(matrix_mean, "V1", "mean_score")
+
+plt <- matrix_mean %>% ggplot(aes(x=pos, y= mean_score,fill=mean_score))+geom_col()+labs(x="Position(pb)", y="Mean Q", color=NULL)+ggtitle("Mean per base of Q scores"); plt
+
+```
+<span style="color:green"> 1/1 I see you have probably integrated the comment from homework6 about the types of plot and this is fine. However, in this case where we want to show the values acroos some positions it is more common to use only line for this type of plot. Nothing wrong here, just some specific type of plots are used in this analysis of FASTQ. </span>
+
+#### Part 3: 
+  
+(2) Plot the percentage of A,C,T,G nucleotides for every position (==PER BASE) on a single graph, using lines of different colors. (see example_graph1 - it doesn't necessarily need to be colored or formatted this way, this is just an example)    
+
+```{r pressure, echo=FALSE}
+
+sequences = readDNAStringSet("https://d28rh4a8wq0iu5.cloudfront.net/ads1/data/ERR037900_1.first1000.fastq", format="fastq")
+
+consensus_matrix <-  consensusMatrix(sequences, as.prob = TRUE)[1:4,]
+
+consensus_matrix_dt <- as.data.table(t(consensus_matrix))
+
+
+consensus_matrix_dt <- consensus_matrix_dt %>% mutate_all(., ~ . * 100) %>% mutate(position_in_read = seq(1:n()))
+
+
+consensus_matrix_perc <- melt(consensus_matrix_dt, id="position_in_read", measure=c("A", "C", "G", "T"))
+
+plt <- consensus_matrix_perc  %>% ggplot(aes(x=position_in_read, y=value, color=variable))+ geom_line()+labs(x="Position (pb)", y="Percentage of bases", color="Bases")+ggtitle("Percentage of base per position")
+
+plt
+
+```
+<font color="green">2/2 </font> 
+
+#### Part 4:  
+  
+(1) For each base, plot a boxplot of quality across all reads. Do this for all bases. (see example_graph2 - it doesn’t need to be colored or formatted this way, this is just an example)  
+```{r pressure, echo=FALSE}
+
+matrix_boxplot <- as.data.table(t(matrix)) %>% mutate(pos=seq(1:100))
+
+matrix_boxplot <- melt(matrix_boxplot, id="pos")
+
+ 
+matrix_boxplot <-  matrix_boxplot %>% mutate(across(pos, as.factor))
+
+box_plt <- matrix_boxplot %>% ggplot(aes(x=pos, y=value, color=pos))+geom_boxplot(outlier.shape = NA, show.legend = F)+labs(x="Position (pb)", y="")+ggtitle("Quality scores across all bases")+scale_x_discrete(breaks = c(1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100))
+
+box_plt
+
+```
+<font color="red"> 0.8/1 Not the best color selection. And did you see the line in the graph in the example? What could this be? </font> 
+
+#### Part 5:  
+  
+(2) For each position, calculate and plot the estimated probability of a base being wrong. If you disregard the strange phenomenon observed in question 2, how does quality depend on the position in the read? Why does this happen? Explain having in mind the sequencing procedure - assume this was sequenced by Illumina technology. 
+
+
+As we said before, this probability is calculated with the formula mentioned above. 
+
+The errors are more prone to ocurr at the end of the reads. Previous studies have shown that Illumina errors are not random and that there is an increase of errors towards the end of the reads.  For sequencing-by-synthesis methods, such as Illumina, the DNA polymerase is a key element. The polymerase used in this type of sequencing permits the incorporation of chain termination dideoxynucleotides (ddNTPs) which inhibit the DNA synthesis, and these are another key element for this sequencing method.
+
+
+ The chemical and structural properties of ddNTPs contribute to the effect of increased errors by the end. After the cleavage of the linker group carrying the fluoresphore, extra chemical molecules on the normal purine and pyrimidine bases remain and result in a vestige. These vestiges can perturb the DNA polymerase and limited the possible read length as they impair the stability of the DNA and hinders the substrate recognition and primer extension. Studies have already talked about an accumulation of these vestiges in Illumina sequencing. Illumina has been able to achieve longer reads by adding reversible terminator nucleotides without the fluorophore to reduce the effect of vestiges, but their impact is still apparent as increased error rates towards the end of the reads.
+
+
+
+```{r pressure, echo=FALSE}
+
+prob_per_position <- matrix_mean %>% mutate(probability=(10)^(-mean_score/10)) 
+plt <- prob_per_position %>% ggplot(aes(x=pos, y=probability, color="orange"))+geom_line(show.legend = F)+ggtitle("Probability of error per position (Illumina sequencing)")+labs(x="Position (bp)", y="Probability of error")
+
+plt
+
+
+```
+<font color="green"> 2/2 </font>
+
+
+#### Part 6:  
+  
+(1) Plot per sequence quality, like in the example graph.
+```{r pressure, echo=FALSE}
+
+sequence_quality <- matrix_boxplot %>% group_by(variable) %>% summarize(q_read=mean(value))
+
+plt <- sequence_quality %>% #sequence_quality_plot %>% 
+  ggplot(aes(x=q_read, color="red"))+geom_freqpoly(show.legend = F)+labs(x="Mean Sequence Quality", y="")+ggtitle("Quality score distribution over all reads")
+
+plt
+```  
+<font color="green">1/1</font> 
+
+(2) Plot per sequence GC content distribution along with theoretical distribution, like in the example graph.
+  
+```{r pressure, echo=FALSE}  
+  
+reads_fastq <-fastq$V1[seq(2, nrow(fastq), 4)]
+
+reads_fastq <- DNAStringSet(reads_fastq)
+
+GC_freq <- as.data.table(letterFrequency(reads_fastq, "GC")) ; GC_freq
+
+colnames(GC_freq) = "gc"
+
+
+sd <- sd(GC_freq$gc)
+mean <- mean(GC_freq$gc)
+
+theoretical <- rnorm(1000, mean, sd)
+
+GC_freq <- as.data.table(cbind(GC_freq, theoretical))
+
+plt <- GC_freq %>% ggplot()+geom_density(aes(x=gc), color="red", show.legend = F)+geom_density(aes(x=theoretical), color="blue")+labs(x="GC")+ggtitle("GC content distribution")
+
+plt
+
+```
+
+<font color="red"> 1.25/2 Density plot is not appropriate choice nor it was required if you examine the figure in the exam example. You can miss important spikes this way. </font> 
